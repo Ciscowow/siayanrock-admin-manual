@@ -1,0 +1,2 @@
+[functions.send-booking-invoice]
+verify_jwt = false

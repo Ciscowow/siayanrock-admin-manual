@@ -73,3 +73,24 @@ export default defineConfig([
 ])
 
 ```
+
+## Sending booking invoices
+
+The Payments page can email a booking statement to the guest's saved email address. The statement includes stay details, recorded payments, refunds actually returned, the net amount received, and the current balance or overpayment.
+
+Email is sent by the `send-booking-invoice` Supabase Edge Function. The Resend API key must only be configured as a Supabase function secret; never add it to a `VITE_*` variable or browser code.
+
+1. Verify a sender domain in Resend.
+2. Link the Supabase CLI to this project, then configure the function secrets:
+
+   ```sh
+   supabase secrets set RESEND_API_KEY=re_... RESEND_FROM_EMAIL="SiayanRock <invoices@your-verified-domain.com>"
+   ```
+
+3. Deploy the function:
+
+   ```sh
+   supabase functions deploy send-booking-invoice
+   ```
+
+The dashboard currently has no staff sign-in, so the function is configured for public dashboard invocation. It accepts one or more booking IDs (up to 20) and always uses the email stored in Supabase. Multiple bookings are included in one combined email only when they all have the same saved guest email; callers cannot supply a recipient or invoice totals. Anyone with access to the public dashboard can still trigger invoice emails, so add staff authentication and server-side authorization before making the dashboard broadly public.
