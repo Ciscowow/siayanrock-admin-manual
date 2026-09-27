@@ -1031,7 +1031,7 @@ function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter
     })
   }
 
-  return <>
+    return <>
     <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Bookings</h1><p className="subtitle">Manage reservations, guests, and stay details.</p></div><button className="button button-primary"><CalendarDays size={17} /> New booking</button></div>
     <section className="card bookings-card">
       <div className="filter-bar">
@@ -1052,7 +1052,7 @@ function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter
                 <span className="booking-account-person"><strong>{guest.guest}</strong><small>{guest.email || guest.phone || guest.guestId}</small></span>
                 <span className="booking-account-count"><strong>{guestBookings.length}</strong><small>{guestBookings.length === 1 ? 'booking' : 'bookings'}</small></span>
               </button>
-              {expanded && <div className="booking-account-details"><BookingTable bookings={guestBookings} onSelect={onSelect} /></div>}
+              {expanded && <div className="booking-account-details"><BookingTable bookings={guestBookings} onSelect={onSelect} hideGuest /></div>}
             </section>
           })}</div>
         </section>)}
@@ -1062,8 +1062,8 @@ function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter
   </>
 }
 
-function BookingTable({ bookings, onSelect, compact = false }: { bookings: Booking[]; onSelect: (b: Booking) => void; compact?: boolean }) {
-  return <div className={`table-scroll ${compact ? 'table-compact' : ''}`}><table><thead><tr><th>Guest</th><th>Room</th><th>Stay dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Payment</th><th /></tr></thead><tbody>{bookings.map((booking) => <tr key={booking.id} onClick={() => onSelect(booking)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onSelect(booking)}><td><div className="guest-cell"><div className="avatar" style={{ background: booking.color }}>{booking.initials}</div><div><strong>{booking.guest}</strong><span>{booking.id}</span></div></div></td><td>{booking.room}</td><td><div className="booking-stay-dates"><span><small>Check-in</small>{formatDate(booking.checkIn)}</span><span><small>Check-out</small>{formatDate(booking.checkOut)}</span></div></td><td>{booking.guests}</td><td><strong>{formatCurrency(booking.amount)}</strong><span className="table-subtext">{formatCurrency(booking.paid)} paid</span></td><td><StatusBadge kind={statusKind(booking.status)}>{booking.status}</StatusBadge></td><td><StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge></td><td><button className="row-more" aria-label={`Actions for ${booking.guest}`} onClick={(e) => { e.stopPropagation(); onSelect(booking) }}><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table>{bookings.length === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>Try adjusting your search or filters.</span></div>}</div>
+function BookingTable({ bookings, onSelect, compact = false, hideGuest = false }: { bookings: Booking[]; onSelect: (b: Booking) => void; compact?: boolean; hideGuest?: boolean }) {
+  return <div className={`table-scroll ${compact ? 'table-compact' : ''}`}><table><thead><tr>{!hideGuest && <th>Guest</th>}<th>Room</th><th>Stay dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Payment</th><th /></tr></thead><tbody>{bookings.map((booking) => <tr key={booking.id} onClick={() => onSelect(booking)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onSelect(booking)}>{!hideGuest && <td><div className="guest-cell"><div className="avatar" style={{ background: booking.color }}>{booking.initials}</div><div><strong>{booking.guest}</strong><span>{booking.id}</span></div></div></td>}<td>{booking.room}</td><td><div className="booking-stay-dates"><span><small>Check-in</small>{formatDate(booking.checkIn)}</span><span><small>Check-out</small>{formatDate(booking.checkOut)}</span></div></td><td>{booking.guests}</td><td><strong>{formatCurrency(booking.amount)}</strong><span className="table-subtext">{formatCurrency(booking.paid)} paid</span></td><td><StatusBadge kind={statusKind(booking.status)}>{booking.status}</StatusBadge></td><td><StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge></td><td><button className="row-more" aria-label={`Actions for ${booking.guest}`} onClick={(e) => { e.stopPropagation(); onSelect(booking) }}><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table>{bookings.length === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>Try adjusting your search or filters.</span></div>}</div>
 }
 
 function BookingDrawer({ booking, onClose, onStatusChange, onAddPayment, paymentError, paymentSaving }: {
