@@ -175,6 +175,11 @@ type PaymentTransaction = {
   isStatusOnly: boolean
 }
 
+const hasSpecialRequest = (booking: Booking) => {
+  const request = booking.request.trim()
+  return request.length > 0 && request.toLowerCase() !== 'no special requests.'
+}
+
 const mapSupabaseRoom = (record: SupabaseRoom): Room => ({
   id: String(record.id),
   name: record.room_name ?? `Room ${record.room_number ?? record.id}`,
@@ -262,6 +267,7 @@ function App() {
   const [metricPopup, setMetricPopup] = useState<MetricPopup | null>(null)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All statuses')
+  const [specialRequestsOnly, setSpecialRequestsOnly] = useState(false)
   const [paymentQuery, setPaymentQuery] = useState('')
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('All statuses')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -484,7 +490,11 @@ function App() {
     (booking.payment !== 'Paid' || bookingsWithCreditsDue.has(booking.id)),
   )
   const creditItemsDueCount = roomChanges.filter((change) => change.credit_amount > 0 && !change.credit_returned).length
-  const vacantRoomCount = Math.max(0, activeRooms.length - occupiedRoomIds.size)
+  const specialRequestBookings = bookings.filter((booking) =>
+    booking.status !== 'Cancelled' &&
+    booking.status !== 'Completed' &&
+    hasSpecialRequest(booking),
+  )
   const rangeDays = range === 'Last 7 days'
     ? 7
     : range === 'This year'
@@ -977,7 +987,7 @@ function App() {
                   <div className="card-heading"><div><h2>Needs your attention</h2><p>Items that need action today</p></div><button className="more-button" aria-label="More options"><MoreHorizontal size={18} /></button></div>
                   <AttentionItem icon={<CalendarDays size={16} />} title="Pending bookings" detail={`${pendingBookings.length} awaiting confirmation`} count={dataLoading ? '—' : String(pendingBookings.length)} onClick={() => { setStatusFilter('Pending'); nav('Bookings') }} />
                   <AttentionItem icon={<CircleDollarSign size={16} />} title="Payment issues" detail={`${paymentAttentionBookings.filter((booking) => booking.payment === 'Partial').length} partial · ${paymentAttentionBookings.filter((booking) => booking.payment === 'Unpaid').length} unpaid · ${paymentAttentionBookings.filter((booking) => booking.payment === 'Overpaid').length} overpaid · ${creditItemsDueCount} refunds due`} count={dataLoading ? '—' : String(paymentAttentionBookings.length + creditItemsDueCount)} onClick={() => { setPaymentStatusFilter('All statuses'); nav('Payments') }} />
-                  <AttentionItem icon={<BedDouble size={16} />} title="Vacant rooms" detail={`${vacantRoomCount} active rooms not occupied`} count={dataLoading ? '—' : String(vacantRoomCount)} onClick={() => nav('Rooms')} />
+                  <AttentionItem icon={<FileText size={16} />} title="Special requests" detail={`${specialRequestBookings.length} bookings need request review`} count={dataLoading ? '—' : String(specialRequestBookings.length)} onClick={() => { setQuery(''); setStatusFilter('All statuses'); setSpecialRequestsOnly(true); nav('Bookings') }} />
                   <button className="text-button" onClick={() => nav('Bookings')}>View all items <ArrowUpRight size={14} /></button>
                 </section>
               </div>
@@ -987,7 +997,7 @@ function App() {
               </section>
             </>
           ) : activeNav === 'Bookings' ? (
-            <BookingsPage bookings={bookings} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onSelect={setSelectedBooking} />
+            <BookingsPage bookings={bookings} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onSelect={setSelectedBooking} />
           ) : activeNav === 'Rooms' ? (
             <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onUpdateRoom={updateRoomDetails} onSetMaintenance={setRoomMaintenance} updatingRoomId={updatingRoomId} error={roomStatusError} />
           ) : activeNav === 'Guests' ? (
@@ -1070,7 +1080,7 @@ function AttentionItem({ icon, title, detail, count, onClick }: { icon: React.Re
   return <button className="attention-item" onClick={onClick}><div className="attention-icon">{icon}</div><div className="attention-copy"><strong>{title}</strong><span>{detail}</span></div><b>{count}</b><ArrowUpRight size={15} className="attention-arrow" /></button>
 }
 
-function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter, onSelect }: { bookings: Booking[]; query: string; setQuery: (v: string) => void; statusFilter: string; setStatusFilter: (v: string) => void; onSelect: (b: Booking) => void }) {
+function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter, specialRequestsOnly, setSpecialRequestsOnly, onSelect }: { bookings: Booking[]; query: string; setQuery: (v: string) => void; statusFilter: string; setStatusFilter: (v: string) => void; specialRequestsOnly: boolean; setSpecialRequestsOnly: (value: boolean) => void; onSelect: (b: Booking) => void }) {
   const [expandedGuestKeys, setExpandedGuestKeys] = useState<Set<string>>(new Set())
   const monthGroups = useMemo(() => {
     const months = new Map<string, Map<string, { key: string; guest: Booking; bookings: Booking[] }>>()
@@ -1108,7 +1118,8 @@ function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter
     guests: month.guests.filter(({ bookings: guestBookings }) => guestBookings.some((booking) => {
       const matchesQuery = `${booking.guest} ${booking.id} ${booking.room}`.toLowerCase().includes(query.trim().toLowerCase())
       const matchesStatus = statusFilter === 'All statuses' || booking.status === statusFilter
-      return matchesQuery && matchesStatus
+      const matchesSpecialRequests = !specialRequestsOnly || hasSpecialRequest(booking)
+      return matchesQuery && matchesStatus && matchesSpecialRequests
     })),
   })).filter((month) => month.guests.length > 0)
   const visibleGuestGroups = visibleMonthGroups.flatMap((month) => month.guests)
@@ -1128,6 +1139,7 @@ function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter
       <div className="filter-bar">
         <div className="search-box"><Search size={17} /><input placeholder="Search by guest, booking ID, or room..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         <label className="select-wrap filter-select"><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option>All statuses</option><option>Confirmed</option><option>Pending</option><option>Checked in</option><option>Completed</option><option>Cancelled</option></select><ChevronDown size={14} /></label>
+        {specialRequestsOnly && <button className="filter-button" onClick={() => setSpecialRequestsOnly(false)}>Special requests only <X size={14} /></button>}
       </div>
       <div className="table-toolbar"><span><strong>{visibleBookingCount}</strong> bookings · <strong>{visibleGuestGroups.length}</strong> guest accounts</span><button className="icon-button"><Ellipsis size={18} /></button></div>
       <div className="booking-account-list">
