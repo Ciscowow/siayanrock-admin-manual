@@ -21,6 +21,7 @@ import {
   Search,
   Trash2,
   Users,
+  Wrench,
   X,
 } from 'lucide-react'
 import {
@@ -66,6 +67,8 @@ type Room = {
   type: string
   status: 'occupied' | 'vacant'
   isActive: boolean
+  isUnderMaintenance: boolean
+  maintenanceNote: string
   guest: string
   rate: number
   capacity: number
@@ -108,7 +111,17 @@ type SupabaseRoom = {
   base_guests: number | null
   is_active: boolean | null
   occupancy_status: 'occupied' | 'vacant' | null
+  maintenance_status: boolean | null
+  maintenance_note: string | null
   description: string | null
+}
+
+type RoomEditValues = {
+  name: string
+  type: string
+  rate: string
+  capacity: string
+  notes: string
 }
 
 type MetricDetail = {
@@ -168,11 +181,25 @@ const mapSupabaseRoom = (record: SupabaseRoom): Room => ({
   type: record.room_type ?? 'Standard',
   status: record.occupancy_status === 'occupied' ? 'occupied' : 'vacant',
   isActive: record.is_active !== false,
+  isUnderMaintenance: record.maintenance_status === true,
+  maintenanceNote: record.maintenance_note ?? '',
   guest: '',
   rate: Number(record.room_price ?? 0),
   capacity: Number(record.max_guests ?? record.base_guests ?? 2),
   notes: record.description ?? '',
 })
+
+const roomImages: Record<string, string> = {
+  batan: '/rooms/batan-1.jpg',
+  dinem: '/rooms/dinem-1.jpg',
+  ditarem: '/rooms/ditarem-1.jpg',
+  itbayat: '/rooms/itbayat-1.jpg',
+  mavudis: '/rooms/mavudis-1.jpg',
+  maysanga: '/rooms/maysanga-1.jpg',
+  sabtang: '/rooms/sabtang-1.jpg',
+  siayan: '/rooms/siayan-1.jpg',
+  vuhus: '/rooms/vuhus-1.jpg',
+}
 
 const hometelItems = [
   { label: 'Overview', icon: Home, count: undefined },
@@ -799,25 +826,89 @@ function App() {
     return true
   }
 
-  const setRoomStatus = async (room: Room, status: Room['status']) => {
+  const updateRoomDetails = async (room: Room, values: RoomEditValues) => {
     setRoomStatusError('')
+    const rate = Number(values.rate)
+    const capacity = Number(values.capacity)
+    if (!values.name.trim() || !values.type.trim() || !Number.isFinite(rate) || rate < 0 || !Number.isInteger(capacity) || capacity < 1) {
+      setRoomStatusError('Enter a room name and type, a valid nightly rate, and a whole-number guest capacity of at least one.')
+      return false
+    }
+    const overCapacityBookings = bookings.filter((booking) =>
+      booking.roomId === Number(room.id) &&
+      booking.status !== 'Cancelled' &&
+      booking.status !== 'Completed' &&
+      booking.guests > capacity,
+    )
+    if (overCapacityBookings.length > 0) {
+      setRoomStatusError(`Guest capacity cannot be reduced below ${Math.max(...overCapacityBookings.map((booking) => booking.guests))}; existing bookings exceed that limit.`)
+      return false
+    }
     setUpdatingRoomId(room.id)
     const { error } = await supabase
       .from('rooms')
-      .update({ occupancy_status: status })
+      .update({
+        room_name: values.name.trim(),
+        room_type: values.type.trim(),
+        room_price: rate,
+        max_guests: capacity,
+        description: values.notes.trim() || null,
+      })
       .eq('id', Number(room.id))
 
     if (error) {
-      console.error('Unable to update room occupancy status:', error)
-      setRoomStatusError(error.message.includes('occupancy_status')
-        ? 'Run the room occupancy SQL migration in Supabase, then try again.'
-        : `Could not update room ${room.name}: ${error.message}`)
+      console.error('Unable to update room details:', error)
+      setRoomStatusError(`Could not update room ${room.name}: ${error.message}`)
       setUpdatingRoomId(null)
-      return
+      return false
     }
 
-    setRooms((items) => items.map((item) => item.id === room.id ? { ...item, status } : item))
+    setRooms((items) => items.map((item) => item.id === room.id
+      ? {
+        ...item,
+        name: values.name.trim(),
+        type: values.type.trim(),
+        rate,
+        capacity,
+        notes: values.notes.trim(),
+      }
+      : item))
+    setBookings((items) => items.map((booking) =>
+      booking.roomId === Number(room.id) ? { ...booking, room: values.name.trim() } : booking))
+    setSelectedBooking((booking) =>
+      booking?.roomId === Number(room.id) ? { ...booking, room: values.name.trim() } : booking)
     setUpdatingRoomId(null)
+    return true
+  }
+
+  const setRoomMaintenance = async (room: Room, enabled: boolean, note: string) => {
+    setRoomStatusError('')
+    setUpdatingRoomId(room.id)
+    const { error } = await supabase.rpc('set_room_maintenance', {
+      p_room_id: Number(room.id),
+      p_maintenance: enabled,
+      p_note: enabled ? note.trim() || null : null,
+    })
+
+    if (error) {
+      console.error('Unable to update room maintenance status:', error)
+      const missingMaintenanceColumn = error.message.includes('maintenance_status') || error.message.includes('maintenance_note')
+      const missingMaintenanceFunction = error.message.includes('set_room_maintenance') || error.code === 'PGRST202'
+      const rowLevelSecurityDenied = error.code === '42501' || error.message.toLowerCase().includes('row-level security')
+      setRoomStatusError(missingMaintenanceColumn || missingMaintenanceFunction
+        ? 'The room maintenance database update is missing. Run supabase/migrations/20261001170000_set_room_maintenance_rpc.sql in the Supabase SQL Editor, then refresh.'
+        : rowLevelSecurityDenied
+          ? 'Supabase still blocks direct maintenance updates. Run supabase/migrations/20261001170000_set_room_maintenance_rpc.sql in the Supabase SQL Editor, then refresh.'
+          : `Could not update maintenance for ${room.name}: ${error.message}`)
+      setUpdatingRoomId(null)
+      return false
+    }
+
+    setRooms((items) => items.map((item) => item.id === room.id
+      ? { ...item, isActive: !enabled, isUnderMaintenance: enabled, maintenanceNote: enabled ? note.trim() : '' }
+      : item))
+    setUpdatingRoomId(null)
+    return true
   }
 
   const nav = (label: string, group: 'hometel' | 'tours' = 'hometel') => {
@@ -898,7 +989,7 @@ function App() {
           ) : activeNav === 'Bookings' ? (
             <BookingsPage bookings={bookings} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onSelect={setSelectedBooking} />
           ) : activeNav === 'Rooms' ? (
-            <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onSetStatus={setRoomStatus} updatingRoomId={updatingRoomId} error={roomStatusError} />
+            <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onUpdateRoom={updateRoomDetails} onSetMaintenance={setRoomMaintenance} updatingRoomId={updatingRoomId} error={roomStatusError} />
           ) : activeNav === 'Guests' ? (
             <GuestsPage guests={guests} bookings={bookings} query={query} setQuery={setQuery} onAssign={(guest) => { setAssignmentError(''); setAssigningGuest(guest) }} onChangeRoom={(guest) => { setAssignmentError(''); setChangingGuestRoom(guest) }} onDeleteGuest={deleteGuestAndHistory} deleteSavingId={guestDeleteSavingId} deleteError={guestDeleteError} />
           ) : activeNav === 'Payments' ? (
@@ -1654,7 +1745,23 @@ function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, se
   </>
 }
 
-function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query, setQuery, onSetStatus, updatingRoomId, error }: { rooms: Room[]; bookings: Booking[]; occupiedRoomIds: Set<number>; dataLoading: boolean; query: string; setQuery: (value: string) => void; onSetStatus: (room: Room, status: Room['status']) => void; updatingRoomId: string | null; error: string }) {
+function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query, setQuery, onUpdateRoom, onSetMaintenance, updatingRoomId, error }: {
+  rooms: Room[]
+  bookings: Booking[]
+  occupiedRoomIds: Set<number>
+  dataLoading: boolean
+  query: string
+  setQuery: (value: string) => void
+  onUpdateRoom: (room: Room, values: RoomEditValues) => Promise<boolean>
+  onSetMaintenance: (room: Room, enabled: boolean, note: string) => Promise<boolean>
+  updatingRoomId: string | null
+  error: string
+}) {
+  const [openMenuRoomId, setOpenMenuRoomId] = useState<string | null>(null)
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null)
+  const [editValues, setEditValues] = useState<RoomEditValues>({ name: '', type: '', rate: '', capacity: '', notes: '' })
+  const [maintenanceRoom, setMaintenanceRoom] = useState<Room | null>(null)
+  const [maintenanceNote, setMaintenanceNote] = useState('')
   const todayKey = toDateKey(new Date())
   const getCurrentBooking = (room: Room) => bookings.find((booking) =>
     booking.roomId === Number(room.id) &&
@@ -1664,15 +1771,93 @@ function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query, setQu
   )
   const filteredRooms = rooms
     .filter((room) => `${room.id} ${room.name} ${getCurrentBooking(room)?.guest ?? ''}`.toLowerCase().includes(query.toLowerCase()))
-    .sort((left, right) => {
-      const leftOccupied = occupiedRoomIds.has(Number(left.id))
-      const rightOccupied = occupiedRoomIds.has(Number(right.id))
-      return Number(leftOccupied) - Number(rightOccupied) || left.name.localeCompare(right.name)
-    })
+    .sort((left, right) => Number(left.id) - Number(right.id))
   const occupied = rooms.filter((room) => room.isActive && occupiedRoomIds.has(Number(room.id))).length
   const vacant = rooms.filter((room) => room.isActive && !occupiedRoomIds.has(Number(room.id))).length
+  const saveRoom = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editingRoom) return
+    const saved = await onUpdateRoom(editingRoom, editValues)
+    if (saved) setEditingRoom(null)
+  }
+  const updateMaintenance = async () => {
+    if (!maintenanceRoom) return
+    const saved = await onSetMaintenance(maintenanceRoom, !maintenanceRoom.isUnderMaintenance, maintenanceNote)
+    if (saved) setMaintenanceRoom(null)
+  }
 
-  return <><div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Rooms</h1><p className="subtitle">Check room occupancy details.</p></div></div><div className="room-summary room-summary-two"><div><span className="summary-dot occupied-dot" /><strong>{dataLoading ? '—' : occupied}</strong><span>Occupied</span></div><div><span className="summary-dot available-dot" /><strong>{dataLoading ? '—' : vacant}</strong><span>Vacant</span></div></div><section className="card rooms-card"><div className="filter-bar"><div className="search-box"><Search size={17} /><input placeholder="Search rooms or guests..." value={query} onChange={(e) => setQuery(e.target.value)} /></div><button className="filter-button"><FileText size={16} /> Filter status <ChevronDown size={14} /></button></div>{error && <div className="room-status-error" role="alert">{error}</div>}<div className="room-grid">{filteredRooms.map((room) => { const currentBooking = getCurrentBooking(room); const isOccupied = occupiedRoomIds.has(Number(room.id)); const status = dataLoading ? 'checking' : isOccupied ? 'occupied' : 'vacant'; const isUpdating = updatingRoomId === room.id; return <article className={`room-tile ${isOccupied ? 'room-tile-occupied' : ''}`} key={room.id}><div className="room-image"><BedDouble size={28} /><span className={`room-status status-${status}`}>{status}</span><button className="room-menu" aria-label={`More actions for room ${room.id}`} disabled={dataLoading}><MoreHorizontal size={17} /></button></div><div className="room-tile-body"><div className="room-title"><div><span className="room-number">Room {room.id}</span><h2>{room.name}</h2></div><span className="room-type">{room.type}</span></div><div className="room-meta"><span><Users size={13} /> Up to {room.capacity}</span><strong>{formatCurrency(room.rate)} <small>/ night</small></strong></div>{currentBooking ? <div className="current-guest"><div className="avatar avatar-small">{currentBooking.initials}</div><span><small>Current guest</small>{currentBooking.guest}</span></div> : <div className="room-available"><Check size={14} /> {dataLoading ? 'Checking reservations…' : status === 'vacant' ? 'Vacant' : 'Occupied'}</div>}<div className="room-actions"><button className="button button-secondary" disabled={dataLoading || isUpdating || Boolean(currentBooking)} title={currentBooking ? 'A current booking keeps this room occupied.' : dataLoading ? 'Checking current bookings.' : undefined} onClick={() => onSetStatus(room, isOccupied ? 'vacant' : 'occupied')}>{dataLoading ? 'Checking bookings…' : isUpdating ? 'Saving…' : currentBooking ? 'Occupied by booking' : isOccupied ? 'Set vacant' : 'Set occupied'}</button></div></div></article> })}</div>{filteredRooms.length === 0 && <div className="empty-state"><BedDouble size={25} /><strong>No rooms found</strong><span>Try a different room number or guest name.</span></div>}</section></>
+  return <>
+    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Rooms</h1><p className="subtitle">Room inventory, occupancy, and maintenance.</p></div></div>
+    <div className="room-summary room-summary-two">
+      <div><span className="summary-dot occupied-dot" /><strong>{dataLoading ? '—' : occupied}</strong><span>Occupied</span></div>
+      <div><span className="summary-dot available-dot" /><strong>{dataLoading ? '—' : vacant}</strong><span>Vacant</span></div>
+    </div>
+    <section className="card rooms-card">
+      <div className="filter-bar"><div className="search-box"><Search size={17} /><input placeholder="Search rooms or guests..." value={query} onChange={(event) => setQuery(event.target.value)} /></div></div>
+      {error && <div className="room-status-error" role="alert">{error}</div>}
+      <div className="room-grid">
+        {filteredRooms.map((room) => {
+          const currentBooking = getCurrentBooking(room)
+          const isOccupied = occupiedRoomIds.has(Number(room.id))
+          const status = dataLoading ? 'checking' : room.isUnderMaintenance ? 'maintenance' : !room.isActive ? 'inactive' : isOccupied ? 'occupied' : 'vacant'
+          const image = roomImages[room.name.toLowerCase()]
+          return <article className={`room-tile ${isOccupied ? 'room-tile-occupied' : ''} ${room.isUnderMaintenance ? 'room-tile-maintenance' : ''}`} key={room.id}>
+            <div className="room-image">
+              <BedDouble className="room-image-fallback" size={28} />
+              {image && <img className="room-photo" src={image} alt={`${room.name} room`} onError={(event) => { event.currentTarget.style.display = 'none' }} />}
+              <span className={`room-status status-${status}`}>{status === 'checking' ? 'Checking...' : status === 'maintenance' ? 'Maintenance' : status === 'inactive' ? 'Inactive' : status === 'occupied' ? 'Occupied' : 'Vacant'}</span>
+              <div className="room-menu-container">
+                <button className="room-menu" aria-label={`More actions for ${room.name}`} aria-expanded={openMenuRoomId === room.id} disabled={dataLoading || Boolean(updatingRoomId)} onClick={() => setOpenMenuRoomId(openMenuRoomId === room.id ? null : room.id)}><MoreHorizontal size={17} /></button>
+                {openMenuRoomId === room.id && <div className="room-menu-dropdown" role="menu">
+                  <button role="menuitem" onClick={() => {
+                    setEditValues({ name: room.name, type: room.type, rate: String(room.rate), capacity: String(room.capacity), notes: room.notes })
+                    setEditingRoom(room)
+                    setOpenMenuRoomId(null)
+                  }}><FileText size={14} /> Edit room</button>
+                  <button role="menuitem" disabled={(Boolean(currentBooking) && !room.isUnderMaintenance) || (!room.isActive && !room.isUnderMaintenance)} title={currentBooking && !room.isUnderMaintenance ? 'A guest is currently checked in.' : !room.isActive && !room.isUnderMaintenance ? 'This room is already offline.' : undefined} onClick={() => {
+                    setMaintenanceRoom(room)
+                    setMaintenanceNote(room.maintenanceNote)
+                    setOpenMenuRoomId(null)
+                  }}><Wrench size={14} /> {room.isUnderMaintenance ? 'End maintenance' : 'Set for maintenance'}</button>
+                </div>}
+              </div>
+            </div>
+            <div className="room-tile-body">
+              <div className="room-title"><div><span className="room-number">Room {room.id}</span><h2>{room.name}</h2></div><span className="room-type">{room.type}</span></div>
+              <div className="room-meta"><span><Users size={13} /> Up to {room.capacity}</span><strong>{formatCurrency(room.rate)} <small>/ night</small></strong></div>
+              {room.notes && <p className="room-card-description">{room.notes}</p>}
+              {currentBooking && <div className="room-card-current-guest"><small>Current guest</small><strong>{currentBooking.guest}</strong></div>}
+              {room.isUnderMaintenance && room.maintenanceNote && <div className="room-card-current-guest"><small>Maintenance note</small><strong>{room.maintenanceNote}</strong></div>}
+            </div>
+          </article>
+        })}
+      </div>
+      {filteredRooms.length === 0 && <div className="empty-state"><BedDouble size={25} /><strong>No rooms found</strong><span>Try a different room number or guest name.</span></div>}
+    </section>
+    {editingRoom && <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !updatingRoomId) setEditingRoom(null) }}>
+      <section className="assignment-dialog card room-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-room-title">
+        <header className="assignment-header"><div><p className="eyebrow">Room inventory</p><h2 id="edit-room-title">Edit {editingRoom.name}</h2><p className="subtitle">Changes update this room’s details in the booking system.</p></div><button className="icon-button" onClick={() => setEditingRoom(null)} aria-label="Close room editor" disabled={Boolean(updatingRoomId)}><X size={19} /></button></header>
+        <form className="room-editor-form" onSubmit={saveRoom}>
+          <label>Room name<input required maxLength={80} value={editValues.name} onChange={(event) => setEditValues({ ...editValues, name: event.target.value })} /></label>
+          <label>Room type<input required maxLength={80} value={editValues.type} onChange={(event) => setEditValues({ ...editValues, type: event.target.value })} /></label>
+          <div className="room-editor-row">
+            <label>Price per night<input required type="number" min="0" step="0.01" value={editValues.rate} onChange={(event) => setEditValues({ ...editValues, rate: event.target.value })} /></label>
+            <label>Guest capacity<input required type="number" min="1" step="1" value={editValues.capacity} onChange={(event) => setEditValues({ ...editValues, capacity: event.target.value })} /></label>
+          </div>
+          <label>Description<textarea rows={3} maxLength={1000} value={editValues.notes} onChange={(event) => setEditValues({ ...editValues, notes: event.target.value })} /></label>
+          <footer className="assignment-actions"><button className="button button-secondary" type="button" onClick={() => setEditingRoom(null)} disabled={Boolean(updatingRoomId)}>Cancel</button><button className="button button-primary" type="submit" disabled={Boolean(updatingRoomId)}>{updatingRoomId === editingRoom.id ? 'Saving…' : 'Save changes'}</button></footer>
+        </form>
+      </section>
+    </div>}
+    {maintenanceRoom && <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !updatingRoomId) setMaintenanceRoom(null) }}>
+      <section className="assignment-dialog card room-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="room-maintenance-title">
+        <header className="assignment-header"><div><p className="eyebrow">Room availability</p><h2 id="room-maintenance-title">{maintenanceRoom.isUnderMaintenance ? 'End maintenance?' : 'Set room for maintenance?'}</h2><p className="subtitle">{maintenanceRoom.isUnderMaintenance ? `${maintenanceRoom.name} will become bookable again.` : `${maintenanceRoom.name} will be removed from new bookings until maintenance is ended. Existing bookings are not changed.`}</p></div><button className="icon-button" onClick={() => setMaintenanceRoom(null)} aria-label="Close maintenance dialog" disabled={Boolean(updatingRoomId)}><X size={19} /></button></header>
+        {!maintenanceRoom.isUnderMaintenance && <label className="room-maintenance-field">Reason or staff note (optional)<textarea rows={3} maxLength={300} value={maintenanceNote} onChange={(event) => setMaintenanceNote(event.target.value)} placeholder="For example, deep cleaning or air-conditioner repair." /></label>}
+        {maintenanceRoom.isUnderMaintenance && maintenanceRoom.maintenanceNote && <p className="room-maintenance-current-note">Current note: {maintenanceRoom.maintenanceNote}</p>}
+        <footer className="assignment-actions"><button className="button button-secondary" onClick={() => setMaintenanceRoom(null)} disabled={Boolean(updatingRoomId)}>Cancel</button><button className="button button-primary" onClick={() => void updateMaintenance()} disabled={Boolean(updatingRoomId)}>{updatingRoomId === maintenanceRoom.id ? 'Saving…' : maintenanceRoom.isUnderMaintenance ? 'End maintenance' : 'Confirm maintenance'}</button></footer>
+      </section>
+    </div>}
+  </>
 }
 
 function PlaceholderPage({ title, onBack }: { title: string; onBack: () => void }) {
