@@ -81,16 +81,23 @@ The Payments page can email a booking statement to the guest's saved email addre
 Email is sent by the `send-booking-invoice` Supabase Edge Function. The Resend API key must only be configured as a Supabase function secret; never add it to a `VITE_*` variable or browser code.
 
 1. Verify a sender domain in Resend.
-2. Link the Supabase CLI to this project, then configure the function secrets:
+2. Run `supabase/migrations/20261003000000_track_booking_invoice_sends.sql` in the Supabase SQL Editor. This adds the timestamp used by the dashboard to identify bookings whose invoices were emailed.
+3. Configure the function secrets in Supabase:
 
    ```sh
    supabase secrets set RESEND_API_KEY=re_... RESEND_FROM_EMAIL="SiayanRock <invoices@your-verified-domain.com>"
    ```
 
-3. Deploy the function:
+4. Deploy the function after updating its code:
 
    ```sh
    supabase functions deploy send-booking-invoice
    ```
 
 The dashboard currently has no staff sign-in, so the function is configured for public dashboard invocation. It accepts one or more booking IDs (up to 20) and always uses the email stored in Supabase. Multiple bookings are included in one combined email only when they all have the same saved guest email; callers cannot supply a recipient or invoice totals. Anyone with access to the public dashboard can still trigger invoice emails, so add staff authentication and server-side authorization before making the dashboard broadly public.
+
+Invoices use the booking's saved total and show the stay nights with its average nightly amount. Additional guests above the room's base occupancy are itemized as included at no additional charge because the current schema has no extra-guest fee. The Overview's Guests invoiced tile and Payments list use `bookings.invoice_sent_at`, which is set only after Resend accepts the email.
+
+   ## Dashboard notifications
+
+   The top-bar notification bell shows new bookings, booking-status changes, and payment transactions, and displays live toast alerts while the dashboard is open. Supabase Realtime must publish changes from `public.bookings` and `public.payments`. If those tables are not already enabled, run `supabase/migrations/20261002230000_enable_dashboard_notifications_realtime.sql` in the Supabase SQL Editor. Notifications are kept in the current browser session and are not a replacement for a persistent audit log.

@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { calculateInvoicePricing } from './pricing.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,11 +14,15 @@ type Booking = {
   check_in: string
   check_out: string
   num_of_guests: number
-  total_price: number | string
 }
 
 type Guest = { id: string; full_name: string | null; email: string | null }
-type Room = { id: number; room_name: string | null; room_number: string | null }
+type Room = {
+  id: number
+  room_name: string | null
+  room_number: string | null
+  room_price: number | string | null
+}
 type Payment = {
   booking_id: string
   amount: number | string
@@ -96,7 +101,7 @@ Deno.serve(async (request) => {
   })
   const { data: bookingData, error: bookingError } = await supabase
     .from('bookings')
-    .select('id, guest_id, room_id, check_in, check_out, num_of_guests, total_price')
+    .select('id, guest_id, room_id, check_in, check_out, num_of_guests')
     .in('id', bookingIds)
 
   if (bookingError) {
@@ -110,7 +115,7 @@ Deno.serve(async (request) => {
   const roomIds = [...new Set(bookings.map((booking) => booking.room_id))]
   const [guestsResult, roomsResult, paymentsResult, roomChangesResult] = await Promise.all([
     supabase.from('guests').select('id, full_name, email').in('id', guestIds),
-    supabase.from('rooms').select('id, room_name, room_number').in('id', roomIds),
+    supabase.from('rooms').select('id, room_name, room_number, room_price').in('id', roomIds),
     supabase.from('payments')
       .select('booking_id, amount, payment_status, paid_at, payment_method, payment_type')
       .in('booking_id', bookingIds)
@@ -137,12 +142,23 @@ Deno.serve(async (request) => {
 
   const recipient = bookingGuests[0]!.email!.trim()
   const guestName = bookingGuests[0]!.full_name?.trim() || 'Guest'
-  if (bookings.some((booking) => !Number.isFinite(Number(booking.total_price)) || Number(booking.total_price) < 0)) {
-    console.error('One or more bookings have an invalid total price:', bookingIds)
-    return jsonResponse({ error: 'One or more booking totals are invalid.' }, 422)
+  const bookingRoomRates = new Map<number, number>()
+  for (const booking of bookings) {
+    const room = rooms.find((item) => item.id === booking.room_id)
+    const roomRate = Number(room?.room_price)
+    if (!room || room.room_price === null || !Number.isFinite(roomRate) || roomRate < 0) {
+      console.error('A booking has no valid room rate for invoice calculation:', booking.id)
+      return jsonResponse({ error: 'One or more room rates are invalid or unavailable.' }, 422)
+    }
+    bookingRoomRates.set(booking.room_id, roomRate)
   }
   const statements = bookings.map((booking) => {
-    const total = Number(booking.total_price)
+    const totalNights = Math.max(0, Math.round(
+      (Date.parse(`${booking.check_out.slice(0, 10)}T00:00:00Z`) - Date.parse(`${booking.check_in.slice(0, 10)}T00:00:00Z`)) / 86_400_000,
+    ))
+    const roomStayAmount = bookingRoomRates.get(booking.room_id)! * totalNights
+    const pricing = calculateInvoicePricing(roomStayAmount, booking.num_of_guests, totalNights)
+    const { total, additionalGuestCount, additionalGuestNightlyRate, additionalGuestCharge } = pricing
     const bookingPayments = payments.filter((payment) => payment.booking_id === booking.id)
     const returnedChanges = roomChanges.filter((change) => change.booking_id === booking.id)
     const paymentTotal = bookingPayments
@@ -157,6 +173,7 @@ Deno.serve(async (request) => {
     const room = rooms.find((item) => item.id === booking.room_id)
     const roomName = room?.room_name?.trim() || `Room ${booking.room_id}`
     const roomLabel = room?.room_number ? `${roomName} (${room.room_number})` : roomName
+    const averageNightlyRate = bookingRoomRates.get(booking.room_id)!
     const rows = bookingPayments.map((payment) => {
       const status = payment.payment_status?.replaceAll('_', ' ') || 'pending'
       const details = [payment.payment_type?.replaceAll('_', ' '), payment.payment_method?.replaceAll('_', ' ')]
@@ -191,7 +208,7 @@ Deno.serve(async (request) => {
             <td style="padding:11px 8px;border-bottom:1px solid #f2eee8;text-align:right;color:${row.refund ? '#a85f4b' : '#463a31'};font-size:13px;font-weight:600;white-space:nowrap">${row.refund ? '−' : ''}${formatCurrency(row.amount)}</td>
           </tr>`).join('')}</tbody>
         </table>`
-      : '<p style="margin:12px 0 18px;padding:14px;border-radius:8px;background:#faf8f5;color:#817970;font-size:12px">No payments have been recorded for this booking yet.</p>'
+      : ''
     const outstandingLabel = overpayment > 0 ? 'Overpayment to return' : 'Balance due'
     const outstanding = overpayment || balanceDue
     const stay = `${formatDate(booking.check_in)} – ${formatDate(booking.check_out)}`
@@ -213,9 +230,10 @@ Deno.serve(async (request) => {
         `Booking ${booking.id}`,
         `Room: ${roomLabel}`,
         `Stay: ${stay}`,
+        `Room stay: ${totalNights} night${totalNights === 1 ? '' : 's'} × ${formatCurrency(averageNightlyRate)} average per night = ${formatCurrency(roomStayAmount)}`,
+        `Additional guest charge: ${additionalGuestCount} additional guest${additionalGuestCount === 1 ? '' : 's'} × ${formatCurrency(additionalGuestNightlyRate)} per guest per night × ${totalNights} night${totalNights === 1 ? '' : 's'} = ${formatCurrency(additionalGuestCharge)}`,
         `Guests: ${booking.num_of_guests}`,
         `Total: ${formatCurrency(total)}`,
-        `Net payments received: ${formatCurrency(netPaid)}`,
         `${outstandingLabel}: ${formatCurrency(outstanding)}`,
       ].join('\n'),
       html: `<table role="presentation" style="width:100%;border-collapse:collapse;margin-top:18px">
@@ -229,11 +247,12 @@ Deno.serve(async (request) => {
             <span style="display:inline-block;padding:5px 9px;border-radius:20px;background:${statusBackground};color:${statusColor};font-size:10px;font-weight:700">${paymentStatus}</span>
           </td>
         </tr>
-        <tr><td colspan="2" style="padding:4px 8px 0">${rowsHtml}</td></tr>
+        ${rowsHtml ? `<tr><td colspan="2" style="padding:4px 8px 0">${rowsHtml}</td></tr>` : ''}
         <tr><td colspan="2" style="padding:0 8px 8px">
           <table role="presentation" style="width:100%;border-collapse:collapse;border-top:2px solid #51483f;border-bottom:2px solid #51483f">
+            <tr><td style="padding:10px 7px;color:#8c857d;font-size:12px">Room stay · ${totalNights} nights · avg. ${formatCurrency(averageNightlyRate)}/night</td><td style="padding:10px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(roomStayAmount)}</td></tr>
+            <tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Additional guest charge · ${additionalGuestCount} guest${additionalGuestCount === 1 ? '' : 's'} × ${formatCurrency(additionalGuestNightlyRate)} per guest per night × ${totalNights} night${totalNights === 1 ? '' : 's'}</td><td style="padding:8px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(additionalGuestCharge)}</td></tr>
             <tr><td style="padding:10px 7px;color:#8c857d;font-size:12px">Booking total</td><td style="padding:10px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(total)}</td></tr>
-            <tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Net payments received</td><td style="padding:8px 7px;text-align:right;color:#347a5b;font-size:12px;font-weight:600">${formatCurrency(netPaid)}</td></tr>
             <tr><td style="padding:10px 7px;color:#332d27;font-size:13px;font-weight:700">${outstandingLabel}</td><td style="padding:10px 7px;text-align:right;color:${balanceColor};font-size:15px;font-weight:700">${formatCurrency(outstanding)}</td></tr>
           </table>
         </td></tr>
@@ -241,7 +260,6 @@ Deno.serve(async (request) => {
     }
   })
   const combinedTotal = statements.reduce((sum, statement) => sum + statement.total, 0)
-  const combinedPaid = statements.reduce((sum, statement) => sum + statement.netPaid, 0)
   const combinedBalance = statements.reduce((sum, statement) => sum + statement.balanceDue, 0)
   const combinedOverpayment = statements.reduce((sum, statement) => sum + statement.overpayment, 0)
   const invoiceSubject = bookings.length === 1 ? `SiayanRock booking invoice · ${bookings[0].id}` : `SiayanRock invoice · ${bookings.length} bookings`
@@ -261,7 +279,6 @@ Deno.serve(async (request) => {
     ...statements.map((statement) => statement.text),
     '',
     `Combined total: ${formatCurrency(combinedTotal)}`,
-    `Combined net payments received: ${formatCurrency(combinedPaid)}`,
     `Combined balance due: ${formatCurrency(combinedBalance)}`,
     ...(combinedOverpayment > 0 ? [`Combined overpayment to return: ${formatCurrency(combinedOverpayment)}`] : []),
     '',
@@ -293,7 +310,6 @@ Deno.serve(async (request) => {
               ${bookings.length > 1 ? `<table role="presentation" style="width:100%;margin-top:22px;border-collapse:collapse;border-top:2px solid #51483f;border-bottom:2px solid #51483f">
                 <tr><td colspan="2" style="padding:13px 7px 9px;color:#995b39;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Combined summary</td></tr>
                 <tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Total for all bookings</td><td style="padding:8px 7px;text-align:right;color:#51483f;font-size:12px;font-weight:600">${formatCurrency(combinedTotal)}</td></tr>
-                <tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Net payments received</td><td style="padding:8px 7px;text-align:right;color:#347a5b;font-size:12px;font-weight:600">${formatCurrency(combinedPaid)}</td></tr>
                 ${combinedBalance > 0 ? `<tr><td style="padding:9px 7px;color:#332d27;font-size:12px;font-weight:700">Combined balance due</td><td style="padding:9px 7px;text-align:right;color:#51483f;font-size:14px;font-weight:700">${formatCurrency(combinedBalance)}</td></tr>` : ''}
                 ${combinedOverpayment > 0 ? `<tr><td style="padding:9px 7px;color:#332d27;font-size:12px;font-weight:700">Overpayments to return</td><td style="padding:9px 7px;text-align:right;color:#a85f4b;font-size:14px;font-weight:700">${formatCurrency(combinedOverpayment)}</td></tr>` : ''}
               </table>` : ''}
@@ -335,5 +351,21 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: 'Resend could not deliver the invoice. Check the sender domain and API key.' }, 502)
   }
 
-  return jsonResponse({ success: true, email: recipient, bookingCount: bookings.length })
+  const sentAt = new Date().toISOString()
+  const { error: trackingError } = await supabase
+    .from('bookings')
+    .update({ invoice_sent_at: sentAt })
+    .in('id', bookingIds)
+
+  if (trackingError) {
+    console.error('Invoice email was sent, but booking invoice timestamps could not be saved:', trackingError)
+    return jsonResponse({
+      success: true,
+      email: recipient,
+      bookingCount: bookings.length,
+      trackingError: trackingError.message,
+    })
+  }
+
+  return jsonResponse({ success: true, email: recipient, bookingCount: bookings.length, sentAt })
 })

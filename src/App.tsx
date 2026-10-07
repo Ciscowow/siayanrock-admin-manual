@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   Plane,
   Search,
+  CheckCheck,
   Trash2,
   Users,
   Wrench,
@@ -52,7 +53,8 @@ type Booking = {
   guests: number
   amount: number
   paid: number
-  payments: { amount: number; paidAt: string | null; method: string; type: string; status: string }[]
+  invoiceSentAt?: string | null
+  payments: { id?: string; amount: number; paidAt: string | null; method: string; type: string; status: string }[]
   status: BookingStatus
   payment: PaymentStatus
   color: string
@@ -94,10 +96,11 @@ type SupabaseBooking = {
   created_at: string
   status: string
   payment_status: string | null
+  invoice_sent_at?: string | null
   special_requests: string | null
   guests: { full_name: string; email: string | null; phone: string | null } | null
   rooms: { room_name: string; room_number: string | null } | null
-  payments: { amount: number | string; payment_status: string | null; paid_at: string | null; payment_method: string | null; payment_type: string | null }[] | null
+  payments: { id?: string; amount: number | string; payment_status: string | null; paid_at: string | null; payment_method: string | null; payment_type: string | null }[] | null
   booking_room_changes: { credit_amount: number | string; credit_returned: boolean | null }[] | null
 }
 
@@ -138,11 +141,33 @@ type MetricPopup = {
   entries: MetricDetail[]
 }
 
+type DashboardNotification = {
+  id: string
+  title: string
+  detail: string
+  createdAt: string
+  category: 'booking' | 'payment'
+  relatedId: string
+  read: boolean
+}
+
 type GuestAssignment = {
   roomId: number
   checkIn: string
   checkOut: string
   guestCount: number
+}
+
+type NewBookingValues = {
+  fullName: string
+  email: string
+  phone: string
+  roomId: number
+  checkIn: string
+  checkOut: string
+  guestCount: number
+  specialRequests: string
+  status: 'pending' | 'confirmed'
 }
 
 type RoomChangeRecord = {
@@ -234,6 +259,14 @@ function formatDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return 'Date unavailable'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 function StatusBadge({ children, kind = 'neutral' }: { children: React.ReactNode; kind?: string }) {
   return <span className={`badge badge-${kind.toLowerCase().replace(' ', '-')}`}><span className="badge-dot" />{children}</span>
 }
@@ -254,6 +287,12 @@ function App() {
   const [roomStatusError, setRoomStatusError] = useState('')
   const [updatingRoomId, setUpdatingRoomId] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+  const [notifications, setNotifications] = useState<DashboardNotification[]>([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [toastNotification, setToastNotification] = useState<Omit<DashboardNotification, 'read'> | null>(null)
+  const [newBookingOpen, setNewBookingOpen] = useState(false)
+  const [newBookingError, setNewBookingError] = useState('')
+  const [newBookingSaving, setNewBookingSaving] = useState(false)
   const [assigningGuest, setAssigningGuest] = useState<Guest | null>(null)
   const [changingGuestRoom, setChangingGuestRoom] = useState<Guest | null>(null)
   const [assignmentError, setAssignmentError] = useState('')
@@ -274,13 +313,39 @@ function App() {
   const [mobileMenu, setMobileMenu] = useState(false)
   const [range, setRange] = useState('Last 30 days')
 
+  const roomsRef = useRef(rooms)
+  const guestsRef = useRef(guests)
+  const bookingsRef = useRef(bookings)
+  const notificationIdsRef = useRef(new Set<string>())
+  const toastTimeoutRef = useRef<number | null>(null)
+  useEffect(() => { roomsRef.current = rooms }, [rooms])
+  useEffect(() => { guestsRef.current = guests }, [guests])
+  useEffect(() => { bookingsRef.current = bookings }, [bookings])
+
+  const pushNotification = useCallback((notification: Omit<DashboardNotification, 'read'>) => {
+    if (notificationIdsRef.current.has(notification.id)) return
+    notificationIdsRef.current.add(notification.id)
+    if (notificationIdsRef.current.size > 40) {
+      const oldestId = notificationIdsRef.current.values().next().value
+      if (oldestId) notificationIdsRef.current.delete(oldestId)
+    }
+    setNotifications((items) => [{ ...notification, read: false }, ...items].slice(0, 40))
+    setToastNotification(notification)
+    if (toastTimeoutRef.current !== null) window.clearTimeout(toastTimeoutRef.current)
+    toastTimeoutRef.current = window.setTimeout(() => setToastNotification(null), 7000)
+  }, [])
+
+  useEffect(() => () => {
+    if (toastTimeoutRef.current !== null) window.clearTimeout(toastTimeoutRef.current)
+  }, [])
+
   useEffect(() => {
     let isMounted = true
 
     const loadBookings = async () => {
       const { data, error } = await supabase
         .from('bookings')
-        .select('*, guests(full_name, email, phone), rooms(room_name, room_number), payments(amount, payment_status, paid_at, payment_method, payment_type), booking_room_changes(credit_amount, credit_returned)')
+        .select('*, guests(full_name, email, phone), rooms(room_name, room_number), payments(id, amount, payment_status, paid_at, payment_method, payment_type), booking_room_changes(credit_amount, credit_returned)')
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -325,8 +390,9 @@ function App() {
             guests: Number(record.num_of_guests ?? 0),
             amount,
             paid,
+            invoiceSentAt: record.invoice_sent_at ?? null,
             payments: paymentRows
-              .map((payment) => ({ amount: Number(payment.amount), paidAt: payment.paid_at, method: payment.payment_method ?? '—', type: payment.payment_type ?? 'payment', status: payment.payment_status ?? 'pending' })),
+              .map((payment) => ({ id: payment.id, amount: Number(payment.amount), paidAt: payment.paid_at, method: payment.payment_method ?? '—', type: payment.payment_type ?? 'payment', status: payment.payment_status ?? 'pending' })),
             status: status === 'completed' ? 'Completed' : status === 'confirmed' || status === 'reserved' ? 'Confirmed' : status === 'checked_in' ? 'Checked in' : status === 'cancelled' ? 'Cancelled' : 'Pending',
             payment: paid > amount ? 'Overpaid' : amount > 0 && paid === amount ? 'Paid' : paid > 0 ? 'Partial' : 'Unpaid',
             color: '#e4c3aa',
@@ -395,6 +461,204 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-dashboard-notifications')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bookings' }, (payload) => {
+        const booking = payload.new as {
+          id?: string
+          guest_id?: string
+          room_id?: number
+          check_in?: string
+          check_out?: string
+          num_of_guests?: number
+          total_price?: number | string
+          status?: string
+          special_requests?: string | null
+          created_at?: string
+        }
+        if (!booking.id) return
+        const bookingId = booking.id
+
+        void (async () => {
+          let guestName = 'Guest'
+          let guestEmail = ''
+          let guestPhone = ''
+          if (booking.guest_id) {
+            const { data, error } = await supabase.from('guests').select('full_name, email, phone').eq('id', booking.guest_id).maybeSingle()
+            if (error) console.error('Unable to load guest for booking notification:', error)
+            else if (data) {
+              guestName = data.full_name
+              guestEmail = data.email ?? ''
+              guestPhone = data.phone ?? ''
+            }
+          }
+          const room = roomsRef.current.find((item) => Number(item.id) === booking.room_id)
+          const roomName = room?.name ?? `Room ${booking.room_id ?? '—'}`
+          const stay = booking.check_in && booking.check_out
+            ? `${formatDate(booking.check_in)} – ${formatDate(booking.check_out)}`
+            : 'Stay dates unavailable'
+          const status = String(booking.status ?? 'pending').toLowerCase()
+          const liveBooking: Booking = {
+            id: bookingId,
+            guestId: booking.guest_id ?? '',
+            guest: guestName,
+            initials: guestName.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+            room: roomName,
+            roomId: Number(booking.room_id ?? 0),
+            dates: `${booking.check_in ?? ''} – ${booking.check_out ?? ''}`,
+            checkIn: booking.check_in ?? '',
+            checkOut: booking.check_out ?? '',
+            createdAt: booking.created_at ?? new Date().toISOString(),
+            guests: Number(booking.num_of_guests ?? 0),
+            amount: Number(booking.total_price ?? 0),
+            paid: 0,
+            payments: [],
+            status: status === 'confirmed' || status === 'reserved' ? 'Confirmed' : status === 'checked_in' ? 'Checked in' : status === 'completed' ? 'Completed' : status === 'cancelled' ? 'Cancelled' : 'Pending',
+            payment: 'Unpaid',
+            color: '#e4c3aa',
+            email: guestEmail,
+            phone: guestPhone,
+            request: booking.special_requests ?? 'No special requests.',
+          }
+          setBookings((items) => items.some((item) => item.id === liveBooking.id) ? items : [liveBooking, ...items])
+          pushNotification({
+            id: `booking:${bookingId}:created`,
+            title: 'New booking received',
+            detail: `${guestName} · ${roomName} · ${stay}`,
+            createdAt: new Date().toISOString(),
+            category: 'booking',
+            relatedId: bookingId,
+          })
+        })()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bookings' }, (payload) => {
+        const previous = payload.old as { id?: string; status?: string }
+        const booking = payload.new as { id?: string; status?: string; guest_id?: string; room_id?: number }
+        if (!booking.id || !booking.status) return
+        const bookingId = booking.id
+        const currentBooking = bookingsRef.current.find((item) => item.id === bookingId)
+        const previousStatus = previous.status ?? currentBooking?.status.toLowerCase().replace(' ', '_')
+        if (previousStatus === booking.status.toLowerCase()) return
+        const guestName = guestsRef.current.find((guest) => guest.id === booking.guest_id)?.full_name ?? `Booking ${bookingId}`
+        const roomName = roomsRef.current.find((room) => Number(room.id) === booking.room_id)?.name
+        const updatedStatus = booking.status.toLowerCase()
+        const mappedStatus: BookingStatus = updatedStatus === 'confirmed' || updatedStatus === 'reserved' ? 'Confirmed' : updatedStatus === 'checked_in' ? 'Checked in' : updatedStatus === 'completed' ? 'Completed' : updatedStatus === 'cancelled' ? 'Cancelled' : 'Pending'
+        setBookings((items) => items.map((item) => item.id === bookingId ? { ...item, status: mappedStatus } : item))
+        setSelectedBooking((item) => item?.id === bookingId ? { ...item, status: mappedStatus } : item)
+        pushNotification({
+          id: `booking:${bookingId}:status:${booking.status}`,
+          title: 'Booking status updated',
+          detail: `${guestName}${roomName ? ` · ${roomName}` : ''} · ${mappedStatus}`,
+          createdAt: new Date().toISOString(),
+          category: 'booking',
+          relatedId: bookingId,
+        })
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payments' }, (payload) => {
+        const payment = payload.new as {
+          id?: string
+          booking_id?: string
+          amount?: number | string
+          payment_type?: string
+          payment_status?: string
+          paid_at?: string | null
+          payment_method?: string | null
+        }
+        if (!payment.id || !payment.booking_id) return
+        const transaction = {
+          id: String(payment.id),
+          amount: Number(payment.amount ?? 0),
+          paidAt: typeof payment.paid_at === 'string' ? payment.paid_at : null,
+          method: payment.payment_method ?? '—',
+          type: payment.payment_type ?? 'payment',
+          status: payment.payment_status ?? 'pending',
+        }
+        const updateBookingPayment = (booking: Booking) => {
+          if (booking.id !== payment.booking_id || booking.payments.some((item) => item.id === transaction.id)) return booking
+          const payments = [...booking.payments, transaction]
+          const paid = booking.paid + (transaction.status.toLowerCase() === 'paid' ? transaction.amount : 0)
+          return {
+            ...booking,
+            payments,
+            paid,
+            payment: paid > booking.amount ? 'Overpaid' as const : paid === booking.amount && booking.amount > 0 ? 'Paid' as const : paid > 0 ? 'Partial' as const : 'Unpaid' as const,
+          }
+        }
+        setBookings((items) => items.map(updateBookingPayment))
+        setSelectedBooking((item) => item ? updateBookingPayment(item) : item)
+        pushNotification({
+          id: `payment:${payment.id}:${payment.payment_status ?? 'created'}`,
+          title: 'Payment transaction recorded',
+          detail: `${bookingsRef.current.find((item) => item.id === payment.booking_id)?.guest ?? `Booking ${payment.booking_id}`} · ${formatCurrency(Number(payment.amount ?? 0))} · ${payment.payment_type ?? 'payment'} (${payment.payment_status ?? 'pending'})`,
+          createdAt: transaction.paidAt ?? new Date().toISOString(),
+          category: 'payment',
+          relatedId: payment.booking_id,
+        })
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payments' }, (payload) => {
+        const payment = payload.new as {
+          id?: string
+          booking_id?: string
+          amount?: number | string
+          payment_type?: string
+          payment_status?: string
+          paid_at?: string | null
+          payment_method?: string | null
+        }
+        if (!payment.id || !payment.booking_id || !payment.payment_status) return
+        const transactionId = String(payment.id)
+        const transactionStatus = payment.payment_status
+        const transactionAmount = Number(payment.amount ?? 0)
+        const transaction = {
+          id: transactionId,
+          amount: transactionAmount,
+          paidAt: payment.paid_at ?? null,
+          method: payment.payment_method ?? '—',
+          type: payment.payment_type ?? 'payment',
+          status: transactionStatus,
+        }
+        const existingBooking = bookingsRef.current.find((booking) => booking.id === payment.booking_id)
+        const existingPayment = existingBooking?.payments.find((item) => item.id === transactionId)
+        if (existingPayment?.status.toLowerCase() === transactionStatus.toLowerCase()) return
+
+        const applyTransactionUpdate = (booking: Booking) => {
+          if (booking.id !== payment.booking_id) return booking
+          const previousPaidAmount = existingPayment?.status.toLowerCase() === 'paid' ? existingPayment.amount : 0
+          const nextPaidAmount = transactionStatus.toLowerCase() === 'paid' ? transactionAmount : 0
+          const paid = Math.max(0, booking.paid - previousPaidAmount + nextPaidAmount)
+          const payments = existingPayment
+            ? booking.payments.map((item) => item.id === transactionId ? transaction : item)
+            : [...booking.payments, transaction]
+          return {
+            ...booking,
+            payments,
+            paid,
+            payment: paid > booking.amount ? 'Overpaid' as const : paid === booking.amount && booking.amount > 0 ? 'Paid' as const : paid > 0 ? 'Partial' as const : 'Unpaid' as const,
+          }
+        }
+        setBookings((items) => items.map(applyTransactionUpdate))
+        setSelectedBooking((item) => item ? applyTransactionUpdate(item) : item)
+        pushNotification({
+          id: `payment:${transactionId}:${transactionStatus}`,
+          title: 'Payment transaction updated',
+          detail: `${existingBooking?.guest ?? `Booking ${payment.booking_id}`} · ${formatCurrency(transactionAmount)} · ${transactionStatus}`,
+          createdAt: transaction.paidAt ?? new Date().toISOString(),
+          category: 'payment',
+          relatedId: payment.booking_id,
+        })
+      })
+      .subscribe((status, error) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('Supabase Realtime notifications are unavailable:', error ?? status)
+        }
+      })
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [pushNotification])
+
   const today = new Date()
   const todayKey = toDateKey(today)
   const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
@@ -457,8 +721,20 @@ function App() {
         }] : []
       }),
   ]
-  const openMetricPopup = (kind: 'occupancy' | 'revenue' | 'check-ins' | 'check-outs') => {
-    const popup: MetricPopup = kind === 'occupancy'
+  const invoiceSentBookings = bookings.filter((booking) => Boolean(booking.invoiceSentAt))
+  const invoiceSentGuests = new Set(invoiceSentBookings.map((booking) => booking.guestId))
+  const openMetricPopup = (kind: 'occupancy' | 'revenue' | 'check-ins' | 'check-outs' | 'invoices') => {
+    const popup: MetricPopup = kind === 'invoices'
+      ? {
+          title: 'Invoices sent',
+          description: `${invoiceSentGuests.size} guest${invoiceSentGuests.size === 1 ? '' : 's'} have received invoices for ${invoiceSentBookings.length} booking${invoiceSentBookings.length === 1 ? '' : 's'}.`,
+          entries: invoiceSentBookings.map((booking) => ({
+            booking,
+            detail: `Sent ${formatDateTime(booking.invoiceSentAt ?? null)}`,
+            statusOverride: 'Sent',
+          })),
+        }
+      : kind === 'occupancy'
       ? {
           title: 'Occupied rooms',
           description: `${occupiedRoomIds.size} of ${activeRooms.length} active rooms are occupied today.`,
@@ -533,18 +809,23 @@ function App() {
       ? amount >= remaining ? 'full' : 'downpayment'
       : 'balance'
     const paidAt = new Date().toISOString()
-    const { error } = await supabase.from('payments').insert({
+    const { data: paymentRecord, error } = await supabase.from('payments').insert({
       booking_id: selectedBooking.id,
       amount,
       payment_type: paymentType,
       payment_method: method,
       payment_status: 'paid',
       paid_at: paidAt,
-    })
+    }).select('id').single()
 
     if (error) {
       console.error('Unable to record booking payment:', error)
       setPaymentError(`Could not record payment: ${error.message}`)
+      setPaymentSaving(false)
+      return false
+    }
+    if (!paymentRecord) {
+      setPaymentError('Payment was submitted, but no transaction record was returned. Refresh and verify before retrying.')
       setPaymentSaving(false)
       return false
     }
@@ -555,10 +836,18 @@ function App() {
       paid,
       payment: paid > selectedBooking.amount ? 'Overpaid' : paid === selectedBooking.amount ? 'Paid' : 'Partial',
       status: selectedBooking.status === 'Pending' ? 'Confirmed' : selectedBooking.status,
-      payments: [...selectedBooking.payments, { amount, paidAt, method, type: paymentType, status: 'paid' }],
+      payments: [...selectedBooking.payments, { id: String(paymentRecord.id), amount, paidAt, method, type: paymentType, status: 'paid' }],
     }
     setBookings((items) => items.map((item) => item.id === updatedBooking.id ? updatedBooking : item))
     setSelectedBooking(updatedBooking)
+    pushNotification({
+      id: `payment:${paymentRecord.id}:paid`,
+      title: 'Payment transaction recorded',
+      detail: `${selectedBooking.guest} · ${formatCurrency(amount)} · ${paymentType}`,
+      createdAt: paidAt,
+      category: 'payment',
+      relatedId: selectedBooking.id,
+    })
     setPaymentSaving(false)
     return true
   }
@@ -641,9 +930,155 @@ function App() {
       request: 'No special requests.',
     }
     setBookings((items) => [booking, ...items])
+    pushNotification({
+      id: `booking:${booking.id}:created`,
+      title: 'Booking created',
+      detail: `${booking.guest} · ${booking.room} · ${formatDate(booking.checkIn)} – ${formatDate(booking.checkOut)}`,
+      createdAt: booking.createdAt,
+      category: 'booking',
+      relatedId: booking.id,
+    })
     setAssigningGuest(null)
     setAssignmentSaving(false)
     return true
+  }
+
+  const createNewBooking = async (values: NewBookingValues) => {
+    setNewBookingError('')
+    if (!values.fullName.trim()) {
+      setNewBookingError('Enter the guest’s name.')
+      return
+    }
+    const room = rooms.find((item) => Number(item.id) === values.roomId)
+    const today = toDateKey(new Date())
+    if (!room || !room.isActive || room.isUnderMaintenance) {
+      setNewBookingError('Choose an active room that is not under maintenance.')
+      return
+    }
+    if (values.checkIn < today || values.checkOut <= values.checkIn) {
+      setNewBookingError('Choose a valid stay: check-in cannot be in the past and check-out must be after check-in.')
+      return
+    }
+    if (!Number.isInteger(values.guestCount) || values.guestCount < 1 || values.guestCount > room.capacity) {
+      setNewBookingError(`This room allows up to ${room.capacity} guests.`)
+      return
+    }
+    const hasConflict = bookings.some((booking) =>
+      booking.roomId === values.roomId &&
+      booking.status !== 'Cancelled' &&
+      booking.status !== 'Completed' &&
+      booking.checkIn < values.checkOut &&
+      booking.checkOut > values.checkIn,
+    )
+    const includesToday = values.checkIn <= today && values.checkOut > today
+    if (hasConflict || includesToday && room.status === 'occupied') {
+      setNewBookingError('That room is already occupied or booked for part of those dates. Select another room or stay period.')
+      return
+    }
+
+    setNewBookingSaving(true)
+    const email = values.email.trim()
+    const phone = values.phone.trim()
+    const normalizedEmail = email.toLowerCase()
+    const normalizedPhone = phone.replace(/\D/g, '')
+    let guest = guests.find((item) =>
+      normalizedEmail && item.email?.trim().toLowerCase() === normalizedEmail,
+    ) ?? (normalizedPhone
+      ? guests.find((item) => item.phone?.replace(/\D/g, '') === normalizedPhone)
+      : undefined)
+    let createdGuest = false
+
+    if (!guest) {
+      const { data, error } = await supabase.from('guests').insert({
+        full_name: values.fullName.trim(),
+        email: email || null,
+        phone: phone || null,
+      }).select('*').single()
+
+      if (error) {
+        console.error('Unable to create guest for booking:', error)
+        setNewBookingError(`Could not save guest details: ${error.message}`)
+        setNewBookingSaving(false)
+        return
+      }
+      if (!data) {
+        setNewBookingError('Guest details were not returned by the database. Please refresh before trying again.')
+        setNewBookingSaving(false)
+        return
+      }
+      const savedGuest = data as Guest
+      guest = savedGuest
+      createdGuest = true
+      setGuests((items) => [savedGuest, ...items])
+    }
+
+    const nights = Math.round((new Date(`${values.checkOut}T00:00:00`).getTime() - new Date(`${values.checkIn}T00:00:00`).getTime()) / 86_400_000)
+    const totalPrice = room.rate * nights
+    const { data, error } = await supabase.from('bookings').insert({
+      room_id: values.roomId,
+      guest_id: guest.id,
+      check_in: values.checkIn,
+      check_out: values.checkOut,
+      num_of_guests: values.guestCount,
+      total_price: totalPrice,
+      downpayment_amount: 0,
+      status: values.status,
+      payment_status: 'unpaid',
+      special_requests: values.specialRequests.trim() || null,
+    }).select('id, created_at').single()
+
+    if (error) {
+      console.error('Unable to create booking:', error)
+      setNewBookingError(createdGuest
+        ? `Guest details were saved, but the booking could not be created: ${error.message}`
+        : `Could not create booking: ${error.message}`)
+      setNewBookingSaving(false)
+      return
+    }
+    if (!data) {
+      setNewBookingError('The booking was not returned by the database. Please refresh and check before trying again.')
+      setNewBookingSaving(false)
+      return
+    }
+
+    const initials = guest.full_name.split(/\s+/).filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase()
+    const booking: Booking = {
+      id: String(data.id),
+      guestId: guest.id,
+      guest: guest.full_name,
+      initials,
+      room: room.name,
+      roomId: values.roomId,
+      dates: `${values.checkIn} – ${values.checkOut}`,
+      checkIn: values.checkIn,
+      checkOut: values.checkOut,
+      createdAt: data.created_at ?? new Date().toISOString(),
+      guests: values.guestCount,
+      amount: totalPrice,
+      paid: 0,
+      payments: [],
+      status: values.status === 'confirmed' ? 'Confirmed' : 'Pending',
+      payment: 'Unpaid',
+      color: '#e4c3aa',
+      email: guest.email ?? '',
+      phone: guest.phone ?? '',
+      request: values.specialRequests.trim() || 'No special requests.',
+    }
+    setBookings((items) => [booking, ...items])
+    pushNotification({
+      id: `booking:${booking.id}:created`,
+      title: 'Booking created',
+      detail: `${booking.guest} · ${booking.room} · ${formatDate(booking.checkIn)} – ${formatDate(booking.checkOut)}`,
+      createdAt: booking.createdAt,
+      category: 'booking',
+      relatedId: booking.id,
+    })
+    setQuery('')
+    setStatusFilter('All statuses')
+    setSpecialRequestsOnly(false)
+    setNewBookingOpen(false)
+    setNewBookingSaving(false)
+    nav('Bookings')
   }
 
   const changeGuestRoom = async (booking: Booking, roomId: number, note: string) => {
@@ -927,6 +1362,24 @@ function App() {
     setMobileMenu(false)
   }
 
+  const openNotification = (notification: DashboardNotification | Omit<DashboardNotification, 'read'>) => {
+    setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, read: true } : item))
+    setNotificationsOpen(false)
+    setToastNotification(null)
+    if (notification.category === 'booking') {
+      setQuery(notification.relatedId)
+      setStatusFilter('All statuses')
+      setSpecialRequestsOnly(false)
+      const booking = bookingsRef.current.find((entry) => entry.id === notification.relatedId)
+      if (booking) setSelectedBooking(booking)
+      nav('Bookings')
+    } else {
+      setPaymentQuery(notification.relatedId)
+      setPaymentStatusFilter('All statuses')
+      nav('Payments')
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? '' : 'sidebar-collapsed'} ${mobileMenu ? 'sidebar-mobile-open' : ''}`}>
@@ -958,8 +1411,51 @@ function App() {
           <button className="mobile-menu-button icon-button" onClick={() => setMobileMenu(!mobileMenu)} aria-label="Open menu"><Menu size={21} /></button>
           <div className="breadcrumb"><span>{activeGroup === 'hometel' ? 'Hometel' : 'Tours'}</span><span className="slash">/</span><strong>{activeNav}</strong></div>
           <div className="topbar-actions">
-            <button className="icon-button notification-button" aria-label="Notifications"><Bell size={19} /><span /></button>
+            <div className="notification-container">
+              <button
+                className="icon-button notification-button"
+                onClick={() => setNotificationsOpen((open) => !open)}
+                aria-label={`Notifications${notifications.filter((item) => !item.read).length ? `, ${notifications.filter((item) => !item.read).length} unread` : ''}`}
+                aria-expanded={notificationsOpen}
+                aria-haspopup="true"
+              >
+                <Bell size={19} />
+                {notifications.some((item) => !item.read) && <span className="notification-count">{Math.min(notifications.filter((item) => !item.read).length, 99)}</span>}
+              </button>
+              {notificationsOpen && <section className="notification-panel" aria-label="Notifications">
+                <header className="notification-panel-header">
+                  <div><strong>Notifications</strong><span>{notifications.filter((item) => !item.read).length} unread</span></div>
+                  <button className="notification-mark-read" onClick={() => setNotifications((items) => items.map((item) => ({ ...item, read: true })))} disabled={!notifications.some((item) => !item.read)}>
+                    <CheckCheck size={14} /> Mark all read
+                  </button>
+                </header>
+                {notifications.length === 0
+                  ? <div className="notification-empty"><Bell size={20} /><strong>You’re all caught up</strong><span>New bookings and payment transactions will appear here.</span></div>
+                  : <div className="notification-list">{notifications.map((item) => (
+                    <button
+                      key={item.id}
+                      className={`notification-item ${item.read ? '' : 'is-unread'}`}
+                      onClick={() => openNotification(item)}
+                    >
+                      <span className={`notification-item-icon ${item.category === 'booking' ? 'booking-notification' : 'payment-notification'}`}>
+                        {item.category === 'booking' ? <CalendarDays size={16} /> : <CircleDollarSign size={16} />}
+                      </span>
+                      <span className="notification-item-copy"><strong>{item.title}</strong><span>{item.detail}</span><small>{new Date(item.createdAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</small></span>
+                      {!item.read && <span className="notification-unread-dot" />}
+                    </button>
+                  ))}</div>}
+              </section>}
+            </div>
           </div>
+          {toastNotification && <div className="notification-toast" role="status">
+            <button className="notification-toast-open" onClick={() => openNotification(toastNotification)}>
+              <span className={`notification-item-icon ${toastNotification.category === 'booking' ? 'booking-notification' : 'payment-notification'}`}>
+                {toastNotification.category === 'booking' ? <CalendarDays size={16} /> : <CircleDollarSign size={16} />}
+              </span>
+              <span><strong>{toastNotification.title}</strong><small>{toastNotification.detail}</small></span>
+            </button>
+            <button className="notification-toast-close" onClick={() => setToastNotification(null)} aria-label="Dismiss notification"><X size={15} /></button>
+          </div>}
         </header>
 
         <div className="page-content">
@@ -969,13 +1465,12 @@ function App() {
             <>
               <div className="page-heading">
                 <div><p className="eyebrow">{today.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p><h1>Overview <span>✦</span></h1><p className="subtitle">Here’s what’s happening across your Hometel and tour operations today.</p></div>
-                <button className="button button-primary" onClick={() => nav('Bookings')}><CalendarDays size={17} /> New booking</button>
               </div>
               <section className="metric-grid">
-                <MetricCard label="Room occupancy" value={dataLoading ? '—' : `${occupiedRoomIds.size} out of ${activeRooms.length}`} detail="Active rooms occupied today" icon={<DoorOpen size={19} />} color="mint" onClick={() => openMetricPopup('occupancy')} />
-                <MetricCard label="Revenue this month" value={dataLoading ? '—' : formatCurrency(monthRevenue)} detail="Paid transactions minus returned credits" icon={<CircleDollarSign size={19} />} color="lavender" onClick={() => openMetricPopup('revenue')} />
-                <MetricCard label="Today’s check-ins" value={dataLoading ? '—' : String(todayCheckIns)} detail="Bookings checking in today" icon={<ArrowDownRight size={19} />} color="peach" onClick={() => openMetricPopup('check-ins')} />
-                <MetricCard label="Today’s check-outs" value={dataLoading ? '—' : String(todayCheckOuts)} detail="Bookings checking out today" icon={<ArrowUpRight size={19} />} color="yellow" onClick={() => openMetricPopup('check-outs')} />
+                <MetricCard label="Guests invoiced" value={dataLoading ? '—' : String(invoiceSentGuests.size)} icon={<Mail size={19} />} color="mint" onClick={() => openMetricPopup('invoices')} />
+                <MetricCard label="Revenue this month" value={dataLoading ? '—' : formatCurrency(monthRevenue)} icon={<CircleDollarSign size={19} />} color="lavender" onClick={() => openMetricPopup('revenue')} />
+                <MetricCard label="Today’s check-ins" value={dataLoading ? '—' : String(todayCheckIns)} icon={<ArrowDownRight size={19} />} color="peach" onClick={() => openMetricPopup('check-ins')} />
+                <MetricCard label="Today’s check-outs" value={dataLoading ? '—' : String(todayCheckOuts)} icon={<ArrowUpRight size={19} />} color="yellow" onClick={() => openMetricPopup('check-outs')} />
               </section>
               <div className="dashboard-grid">
                 <section className="card chart-card">
@@ -997,11 +1492,11 @@ function App() {
               </section>
             </>
           ) : activeNav === 'Bookings' ? (
-            <BookingsPage bookings={bookings} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onSelect={setSelectedBooking} />
+            <BookingsPage bookings={bookings} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onSelect={setSelectedBooking} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
           ) : activeNav === 'Rooms' ? (
             <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onUpdateRoom={updateRoomDetails} onSetMaintenance={setRoomMaintenance} updatingRoomId={updatingRoomId} error={roomStatusError} />
           ) : activeNav === 'Guests' ? (
-            <GuestsPage guests={guests} bookings={bookings} query={query} setQuery={setQuery} onAssign={(guest) => { setAssignmentError(''); setAssigningGuest(guest) }} onChangeRoom={(guest) => { setAssignmentError(''); setChangingGuestRoom(guest) }} onDeleteGuest={deleteGuestAndHistory} deleteSavingId={guestDeleteSavingId} deleteError={guestDeleteError} />
+            <GuestsPage guests={guests} bookings={bookings} query={query} setQuery={setQuery} onChangeRoom={(guest) => { setAssignmentError(''); setChangingGuestRoom(guest) }} onDeleteGuest={deleteGuestAndHistory} deleteSavingId={guestDeleteSavingId} deleteError={guestDeleteError} />
           ) : activeNav === 'Payments' ? (
             <PaymentsPage
               bookings={bookings}
@@ -1012,6 +1507,10 @@ function App() {
               setStatusFilter={setPaymentStatusFilter}
               onMarkCreditReturned={markRoomChangeCreditReturned}
               onReturnOverpayment={returnBookingOverpayment}
+              onInvoiceSent={(bookingIds, sentAt) => {
+                setBookings((items) => items.map((booking) => bookingIds.includes(booking.id) ? { ...booking, invoiceSentAt: sentAt } : booking))
+                setSelectedBooking((booking) => booking && bookingIds.includes(booking.id) ? { ...booking, invoiceSentAt: sentAt } : booking)
+              }}
               creditReturnSavingId={creditReturnSavingId}
               creditStatusError={creditStatusError}
             />
@@ -1022,6 +1521,7 @@ function App() {
       </main>
 
       {selectedBooking && <BookingDrawer booking={selectedBooking} onClose={() => { setSelectedBooking(null); setPaymentError('') }} onStatusChange={updateBookingStatus} onAddPayment={addBookingPayment} paymentError={paymentError} paymentSaving={paymentSaving} />}
+      {newBookingOpen && <NewBookingDialog rooms={rooms} guests={guests} bookings={bookings} error={newBookingError} saving={newBookingSaving} onClose={() => { if (!newBookingSaving) setNewBookingOpen(false) }} onCreate={createNewBooking} />}
       {assigningGuest && <GuestAssignmentDialog guest={assigningGuest} rooms={rooms} bookings={bookings} error={assignmentError} saving={assignmentSaving} onClose={() => { if (!assignmentSaving) setAssigningGuest(null) }} onAssign={(assignment) => assignGuestToRoom(assigningGuest, assignment)} />}
       {changingGuestRoom && <RoomChangeDialog
         guest={changingGuestRoom}
@@ -1038,8 +1538,8 @@ function App() {
   )
 }
 
-function MetricCard({ label, value, detail, icon, color, onClick }: { label: string; value: string; detail: string; icon: React.ReactNode; color: string; onClick: () => void }) {
-  return <button className="card metric-card" onClick={onClick} aria-label={`${label}: ${value}. View details`}><div className={`metric-icon ${color}`}>{icon}</div><p>{label}</p><div className="metric-value">{value}</div><div className="metric-change">{detail}</div><span className="metric-hint">View details <ArrowUpRight size={12} /></span></button>
+function MetricCard({ label, value, icon, color, onClick }: { label: string; value: string; icon: React.ReactNode; color: string; onClick: () => void }) {
+  return <button className="card metric-card" onClick={onClick} aria-label={`${label}: ${value}. View details`}><div className={`metric-icon ${color}`}>{icon}</div><p>{label}</p><div className="metric-value">{value}</div><span className="metric-hint">View details <ArrowUpRight size={12} /></span></button>
 }
 
 function MetricPopupDialog({ popup, loading, onClose }: { popup: MetricPopup; loading: boolean; onClose: () => void }) {
@@ -1060,12 +1560,12 @@ function MetricPopupDialog({ popup, loading, onClose }: { popup: MetricPopup; lo
       </header>
       <div className="metric-popup-content">
         {loading ? <div className="empty-state"><strong>Loading details…</strong></div> : popup.entries.length === 0 ? (
-          <div className="empty-state"><CalendarDays size={25} /><strong>No booked rooms to show</strong><span>There are no matching records for this metric.</span></div>
+          <div className="empty-state"><CalendarDays size={25} /><strong>No records to show</strong><span>There are no matching records for this metric.</span></div>
         ) : popup.entries.map(({ booking, room, detail, amount, statusOverride }, index) => (
           <article className="metric-popup-entry" key={`${booking?.id ?? room?.id}-${detail}-${index}`}>
             <div className="metric-popup-room"><BedDouble size={17} /><div><strong>{booking?.room ?? room?.name}</strong><span>{booking ? `${booking.guest} · ${booking.id}` : 'Manually set occupied'}</span></div></div>
             <div className="metric-popup-meta"><span>{detail}</span>{amount !== undefined && <strong className={amount < 0 ? 'credit-amount' : undefined}>{amount < 0 ? '−' : ''}{formatCurrency(Math.abs(amount))}</strong>}</div>
-            <StatusBadge kind={statusOverride ? 'warning' : popup.title === 'Revenue this month' ? 'success' : booking ? statusKind(booking.status) : 'info'}>
+            <StatusBadge kind={statusOverride === 'Sent' || popup.title === 'Revenue this month' ? 'success' : statusOverride ? 'warning' : booking ? statusKind(booking.status) : 'info'}>
               {statusOverride ?? (popup.title === 'Revenue this month' ? 'Paid' : booking ? booking.status : 'Occupied')}
             </StatusBadge>
           </article>
@@ -1080,7 +1580,7 @@ function AttentionItem({ icon, title, detail, count, onClick }: { icon: React.Re
   return <button className="attention-item" onClick={onClick}><div className="attention-icon">{icon}</div><div className="attention-copy"><strong>{title}</strong><span>{detail}</span></div><b>{count}</b><ArrowUpRight size={15} className="attention-arrow" /></button>
 }
 
-function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter, specialRequestsOnly, setSpecialRequestsOnly, onSelect }: { bookings: Booking[]; query: string; setQuery: (v: string) => void; statusFilter: string; setStatusFilter: (v: string) => void; specialRequestsOnly: boolean; setSpecialRequestsOnly: (value: boolean) => void; onSelect: (b: Booking) => void }) {
+function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter, specialRequestsOnly, setSpecialRequestsOnly, onSelect, onCreateBooking }: { bookings: Booking[]; query: string; setQuery: (v: string) => void; statusFilter: string; setStatusFilter: (v: string) => void; specialRequestsOnly: boolean; setSpecialRequestsOnly: (value: boolean) => void; onSelect: (b: Booking) => void; onCreateBooking: () => void }) {
   const [expandedGuestKeys, setExpandedGuestKeys] = useState<Set<string>>(new Set())
   const monthGroups = useMemo(() => {
     const months = new Map<string, Map<string, { key: string; guest: Booking; bookings: Booking[] }>>()
@@ -1134,7 +1634,7 @@ function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter
   }
 
     return <>
-    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Bookings</h1><p className="subtitle">Manage reservations, guests, and stay details.</p></div><button className="button button-primary"><CalendarDays size={17} /> New booking</button></div>
+    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Bookings</h1><p className="subtitle">Manage reservations, guests, and stay details.</p></div><button className="button button-primary" onClick={onCreateBooking}><CalendarDays size={17} /> New booking</button></div>
     <section className="card bookings-card">
       <div className="filter-bar">
         <div className="search-box"><Search size={17} /><input placeholder="Search by guest, booking ID, or room..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
@@ -1263,12 +1763,11 @@ function BookingDrawer({ booking, onClose, onStatusChange, onAddPayment, payment
   )
 }
 
-function GuestsPage({ guests, bookings, query, setQuery, onAssign, onChangeRoom, onDeleteGuest, deleteSavingId, deleteError }: {
+function GuestsPage({ guests, bookings, query, setQuery, onChangeRoom, onDeleteGuest, deleteSavingId, deleteError }: {
   guests: Guest[]
   bookings: Booking[]
   query: string
   setQuery: (value: string) => void
-  onAssign: (guest: Guest) => void
   onChangeRoom: (guest: Guest) => void
   onDeleteGuest: (guest: Guest) => Promise<boolean>
   deleteSavingId: string | null
@@ -1298,7 +1797,6 @@ function GuestsPage({ guests, bookings, query, setQuery, onAssign, onChangeRoom,
           <td>{guest.phone ?? '—'}</td>
           <td>{new Date(guest.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
           <td><div className="guest-room-actions">
-            <button className="button button-secondary guest-assign-button" onClick={() => onAssign(guest)}><BedDouble size={14} /> Assign room</button>
             {hasActiveBooking && <button className="button button-secondary guest-assign-button" onClick={() => onChangeRoom(guest)}><DoorOpen size={14} /> Change room</button>}
             <button className="button button-secondary guest-delete-button" onClick={() => setGuestToDelete(guest)} disabled={Boolean(deleteSavingId)} aria-label={`Delete ${guest.full_name}`}><Trash2 size={14} /> Delete guest</button>
             {deleting && <span className="guest-delete-progress">Deleting…</span>}
@@ -1398,6 +1896,135 @@ function GuestAssignmentDialog({ guest, rooms, bookings, error, saving, onClose,
         <footer className="assignment-actions">
           <button className="button button-secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="button button-primary" type="submit" disabled={saving || !selectedRoom || nights < 1 || Number(guestCount) > (selectedRoom?.capacity ?? 0)}>{saving ? 'Creating booking…' : 'Assign room'}</button>
+        </footer>
+      </form>
+    </section>
+  </div>
+}
+
+function NewBookingDialog({ rooms, guests, bookings, error, saving, onClose, onCreate }: {
+  rooms: Room[]
+  guests: Guest[]
+  bookings: Booking[]
+  error: string
+  saving: boolean
+  onClose: () => void
+  onCreate: (values: NewBookingValues) => Promise<void>
+}) {
+  const today = toDateKey(new Date())
+  const tomorrow = toDateKey(new Date(Date.now() + 86_400_000))
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [checkIn, setCheckIn] = useState(today)
+  const [checkOut, setCheckOut] = useState(tomorrow)
+  const [roomId, setRoomId] = useState('')
+  const [guestCount, setGuestCount] = useState('1')
+  const [specialRequests, setSpecialRequests] = useState('')
+  const [status, setStatus] = useState<'pending' | 'confirmed'>('confirmed')
+  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedPhone = phone.replace(/\D/g, '')
+  const matchingGuest = guests.find((guest) =>
+    normalizedEmail && guest.email?.trim().toLowerCase() === normalizedEmail,
+  ) ?? (normalizedPhone
+    ? guests.find((guest) => guest.phone?.replace(/\D/g, '') === normalizedPhone)
+    : undefined)
+  const availableRooms = rooms.filter((room) => {
+    if (!room.isActive || room.isUnderMaintenance) return false
+    const conflict = bookings.some((booking) =>
+      booking.roomId === Number(room.id) &&
+      booking.status !== 'Cancelled' &&
+      booking.status !== 'Completed' &&
+      booking.checkIn < checkOut &&
+      booking.checkOut > checkIn,
+    )
+    const includesToday = checkIn <= today && checkOut > today
+    return !conflict && !(includesToday && room.status === 'occupied')
+  })
+
+  useEffect(() => {
+    setRoomId((currentRoomId) =>
+      availableRooms.some((room) => room.id === currentRoomId)
+        ? currentRoomId
+        : availableRooms[0]?.id ?? '',
+    )
+  }, [availableRooms])
+
+  const selectedRoom = availableRooms.find((room) => room.id === roomId)
+  const nights = Math.max(0, Math.round((new Date(`${checkOut}T00:00:00`).getTime() - new Date(`${checkIn}T00:00:00`).getTime()) / 86_400_000))
+  const totalPrice = (selectedRoom?.rate ?? 0) * nights
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedRoom) return
+    void onCreate({
+      fullName,
+      email,
+      phone,
+      roomId: Number(roomId),
+      checkIn,
+      checkOut,
+      guestCount: Number(guestCount),
+      specialRequests,
+      status,
+    })
+  }
+
+  return <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
+    <section className="assignment-dialog card" role="dialog" aria-modal="true" aria-labelledby="new-booking-title">
+      <header className="assignment-header">
+        <div><p className="eyebrow">Hometel reservation</p><h2 id="new-booking-title">Create a booking</h2><p className="subtitle">Add guest details and reserve an available room.</p></div>
+        <button className="icon-button" onClick={onClose} aria-label="Close new booking" disabled={saving}><X size={19} /></button>
+      </header>
+      <form className="assignment-form" onSubmit={submit}>
+        <label>Guest name
+          <input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required disabled={saving} />
+        </label>
+        <div className="assignment-date-row">
+          <label><span className="assignment-label-title">Email <span>(optional)</span></span>
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={saving} />
+          </label>
+          <label><span className="assignment-label-title">Phone <span>(optional)</span></span>
+            <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" disabled={saving} />
+          </label>
+        </div>
+        {matchingGuest && <p className="room-change-note">Existing guest record will be used: <strong>{matchingGuest.full_name}</strong>.</p>}
+        <label>Room
+          <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving || availableRooms.length === 0}>
+            {availableRooms.length === 0 ? <option value="">No rooms available for these dates</option> : availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
+          </select>
+        </label>
+        <div className="assignment-date-row">
+          <label>Check-in
+            <input type="date" value={checkIn} min={today} onChange={(event) => setCheckIn(event.target.value)} required disabled={saving} />
+          </label>
+          <label>Check-out
+            <input type="date" value={checkOut} min={checkIn || today} onChange={(event) => setCheckOut(event.target.value)} required disabled={saving} />
+          </label>
+        </div>
+        <div className="assignment-date-row">
+          <label>Number of guests
+            <input type="number" min="1" max={selectedRoom?.capacity ?? undefined} value={guestCount} onChange={(event) => setGuestCount(event.target.value)} required disabled={saving || !selectedRoom} />
+          </label>
+          <label>Booking status
+            <select value={status} onChange={(event) => {
+              const nextStatus = event.target.value
+              if (nextStatus === 'pending' || nextStatus === 'confirmed') setStatus(nextStatus)
+            }} disabled={saving}>
+              <option value="confirmed">Confirmed</option>
+              <option value="pending">Pending</option>
+            </select>
+          </label>
+        </div>
+        <label><span className="assignment-label-title">Special requests <span>(optional)</span></span>
+          <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} disabled={saving} />
+        </label>
+        <p className="room-change-note">Room rate is per room per night. No payment is recorded; the full amount remains outstanding.</p>
+        <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Booking total` : 'Booking total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        {!selectedRoom && <p className="payment-error" role="status">No active room is available for the selected stay dates.</p>}
+        {error && <p className="payment-error" role="alert">{error}</p>}
+        <footer className="assignment-actions">
+          <button className="button button-secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="button button-primary" type="submit" disabled={saving || !selectedRoom || nights < 1 || Number(guestCount) > (selectedRoom?.capacity ?? 0)}>{saving ? 'Creating booking…' : 'Create booking'}</button>
         </footer>
       </form>
     </section>
@@ -1504,7 +2131,7 @@ function RoomChangeDialog({ guest, rooms, bookings, setupError, error, saving, o
   </div>
 }
 
-function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, setStatusFilter, onMarkCreditReturned, onReturnOverpayment, creditReturnSavingId, creditStatusError }: {
+function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, setStatusFilter, onMarkCreditReturned, onReturnOverpayment, onInvoiceSent, creditReturnSavingId, creditStatusError }: {
   bookings: Booking[]
   roomChanges: RoomChangeRecord[]
   query: string
@@ -1513,6 +2140,7 @@ function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, se
   setStatusFilter: (value: string) => void
   onMarkCreditReturned: (changeId: string) => Promise<boolean>
   onReturnOverpayment: (booking: Booking) => Promise<boolean>
+  onInvoiceSent: (bookingIds: string[], sentAt: string) => void
   creditReturnSavingId: string | null
   creditStatusError: string
 }) {
@@ -1527,7 +2155,7 @@ function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, se
     setInvoiceSendingId(guestKey)
     setInvoiceFeedback(null)
     try {
-      const { error } = await supabase.functions.invoke('send-booking-invoice', {
+      const { data, error } = await supabase.functions.invoke('send-booking-invoice', {
         body: { bookingIds },
       })
 
@@ -1537,6 +2165,17 @@ function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, se
         return
       }
 
+      if (typeof data?.trackingError === 'string') {
+        console.error('Invoice email was sent, but sent status could not be recorded:', data.trackingError)
+        setInvoiceFeedback({ bookingId: guestKey, message: 'Email sent successfully, but its sent status could not be saved. Please check the invoice_sent_at migration and refresh.', isError: true })
+        return
+      }
+      if (typeof data?.sentAt !== 'string') {
+        console.error('Invoice function returned success without a sent timestamp:', data)
+        setInvoiceFeedback({ bookingId: guestKey, message: 'Email sent, but the function did not confirm invoice tracking. Refresh and verify before retrying.', isError: true })
+        return
+      }
+      onInvoiceSent(bookingIds, data.sentAt)
       setInvoiceFeedback({ bookingId: guestKey, message: `Invoice${selectedBookings.length === 1 ? '' : 's'} covering ${selectedBookings.length} booking${selectedBookings.length === 1 ? '' : 's'} sent to ${selectedBookings[0].email}.`, isError: false })
     } catch (error) {
       console.error('Unable to send booking invoice:', error)
@@ -1676,13 +2315,17 @@ function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, se
       <div className="table-toolbar"><span><strong>{visibleGuestGroups.length}</strong> guests · {visibleTransactions.filter((payment) => !payment.isStatusOnly).length} transactions</span><span>{formatCurrency(netReceived)} net received</span></div>
       {creditStatusError && <p className="payment-error" role="alert">{creditStatusError}</p>}
       <div className="table-scroll">
-        <table><thead><tr><th>Guest</th><th>Bookings</th><th>Transactions</th><th>Net received</th><th>Payment status</th><th /></tr></thead>
+        <table><thead><tr><th>Guest</th><th>Bookings</th><th>Transactions</th><th>Net received</th><th>Payment status</th><th>Invoice</th><th /></tr></thead>
           <tbody>{visibleGuestGroups.map(({ key, guest, transactions }) => {
             const bookingsById = new Map(transactions.map((transaction) => [transaction.booking.id, transaction.booking]))
             const bookingRecords = Array.from(bookingsById.values())
             const bookingIds = new Set(bookingRecords.map((booking) => booking.id))
             const guestNet = transactions.reduce((sum, transaction) => sum + transaction.displayAmount, 0)
             const paymentStatus = getGuestPaymentStatus(transactions)
+            const lastInvoiceSentAt = bookingRecords
+              .map((booking) => booking.invoiceSentAt)
+              .filter((sentAt): sentAt is string => Boolean(sentAt))
+              .sort((left, right) => right.localeCompare(left))[0]
             const bookingStatusCounts = bookingRecords.reduce((counts, booking) => {
               counts.set(booking.payment, (counts.get(booking.payment) ?? 0) + 1)
               return counts
@@ -1694,6 +2337,7 @@ function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, se
               <td><StatusBadge kind={paymentStatus === 'Returned' ? 'warning' : statusKind(paymentStatus)}>{paymentStatus}</StatusBadge>
                 {paymentStatus === 'Mixed' && <span className="payment-status-summary">{Array.from(bookingStatusCounts, ([status, count]) => `${count} ${status.toLowerCase()}`).join(' · ')}</span>}
               </td>
+              <td>{lastInvoiceSentAt ? <StatusBadge kind="success">Sent {formatDate(lastInvoiceSentAt)}</StatusBadge> : <StatusBadge kind="neutral">Not sent</StatusBadge>}</td>
               <td><div className="payment-row-actions">
                 <button className="button button-secondary payment-view-button" onClick={() => setSelectedGuestId(key)}>View transactions</button>
                 {transactions.filter((transaction) => transaction.isCreditReturn && transaction.transactionStatus === 'Refund due').map((transaction) => <button className="button button-secondary payment-view-button refund-due-action" key={transaction.id} disabled={Boolean(creditReturnSavingId)} title={`Mark ${formatCurrency(transaction.amount)} refund returned for ${transaction.booking.room}`} onClick={() => onMarkCreditReturned(transaction.id)}>{creditReturnSavingId === transaction.id ? 'Updating…' : `Mark ${formatCurrency(transaction.amount)} refunded`}</button>)}
@@ -1837,7 +2481,6 @@ function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query, setQu
             <div className="room-tile-body">
               <div className="room-title"><div><span className="room-number">Room {room.id}</span><h2>{room.name}</h2></div><span className="room-type">{room.type}</span></div>
               <div className="room-meta"><span><Users size={13} /> Up to {room.capacity}</span><strong>{formatCurrency(room.rate)} <small>/ night</small></strong></div>
-              {room.notes && <p className="room-card-description">{room.notes}</p>}
               {currentBooking && <div className="room-card-current-guest"><small>Current guest</small><strong>{currentBooking.guest}</strong></div>}
               {room.isUnderMaintenance && room.maintenanceNote && <div className="room-card-current-guest"><small>Maintenance note</small><strong>{room.maintenanceNote}</strong></div>}
             </div>
