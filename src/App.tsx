@@ -1784,7 +1784,7 @@ function GuestsPage({ guests, bookings, query, setQuery, onChangeRoom, onDeleteG
   }
 
   return <>
-    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Guests</h1><p className="subtitle">Review customer details and stay history.</p></div><button className="button button-primary"><Users size={17} /> Add guest</button></div>
+    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Guests</h1><p className="subtitle">Review customer details and stay history.</p></div></div>
     <section className="card bookings-card">
       <div className="filter-bar"><div className="search-box"><Search size={17} /><input placeholder="Search guests or email..." value={query} onChange={(e) => setQuery(e.target.value)} /></div></div>
       <div className="table-toolbar"><span><strong>{filteredGuests.length}</strong> guests</span></div>
@@ -1980,10 +1980,10 @@ function NewBookingDialog({ rooms, guests, bookings, error, saving, onClose, onC
           <input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required disabled={saving} />
         </label>
         <div className="assignment-date-row">
-          <label><span className="assignment-label-title">Email <span>(optional)</span></span>
+          <label>Email
             <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={saving} />
           </label>
-          <label><span className="assignment-label-title">Phone <span>(optional)</span></span>
+          <label>Phone
             <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" disabled={saving} />
           </label>
         </div>
@@ -2018,8 +2018,7 @@ function NewBookingDialog({ rooms, guests, bookings, error, saving, onClose, onC
         <label><span className="assignment-label-title">Special requests <span>(optional)</span></span>
           <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} disabled={saving} />
         </label>
-        <p className="room-change-note">Room rate is per room per night. No payment is recorded; the full amount remains outstanding.</p>
-        <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Booking total` : 'Booking total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        <div className="assignment-total"><span>Booking total</span><strong>{formatCurrency(totalPrice)}</strong></div>
         {!selectedRoom && <p className="payment-error" role="status">No active room is available for the selected stay dates.</p>}
         {error && <p className="payment-error" role="alert">{error}</p>}
         <footer className="assignment-actions">
