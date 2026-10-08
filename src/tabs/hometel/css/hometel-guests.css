@@ -1,0 +1,44 @@
+.guest-room-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.guest-clickable-row { cursor:pointer; }
+.guest-clickable-row:hover { background:#fcfaf7; }
+.guest-clickable-row:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.guest-profile-trigger { display:inline-flex; max-width:100%; align-items:center; gap:9px; padding:0; border:0; background:transparent; color:inherit; text-align:left; cursor:pointer; }
+.guest-profile-trigger:hover strong { color:var(--accent); }
+.guest-profile-trigger:focus-visible { border-radius:6px; outline:2px solid var(--accent); outline-offset:3px; }
+.guest-profile-trigger-copy { display:grid; min-width:0; gap:3px; }
+.guest-profile-trigger-copy strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.guest-profile-trigger-copy small { color:#8c847b; font-size:13px; }
+.guest-delete-button { padding:7px 10px; border-color:#e8d2ce; color:#a84e48; font-size:14px; white-space:nowrap; }
+.guest-delete-button:hover { background:#fbf1f0; }
+.guest-delete-progress { color:#8c847b; font-size:14px; }
+.guest-profile-backdrop { align-items:center; padding:24px; }
+.assignment-dialog.guest-profile-dialog { width:min(860px,100%); max-height:calc(100vh - 48px); padding:30px; }
+.guest-profile-dialog .assignment-header { margin-bottom:26px; }
+.guest-profile-dialog .assignment-header h2 { font-size:30px; }
+.guest-profile-content { display:grid; gap:26px; }
+.guest-profile-info { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.guest-profile-info > div { display:grid; min-width:0; gap:7px; padding:16px 18px; border:1px solid var(--line); border-radius:9px; background:#fcfbf9; }
+.guest-profile-info span,.guest-profile-booking-meta { color:#8c847b; font-size:15px; }
+.guest-profile-info strong { overflow-wrap:anywhere; color:#51483f; font-size:16px; }
+.guest-profile-stays { display:grid; gap:14px; }
+.guest-profile-section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.guest-profile-section-heading h3 { margin:0; color:#51483f; font-size:19px; }
+.guest-profile-section-heading > span { color:#8c847b; font-size:15px; }
+.guest-profile-booking { display:grid; gap:14px; padding:18px; border:1px solid var(--line); border-radius:9px; background:#fff; }
+.guest-profile-booking > header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.guest-profile-booking > header > div { display:grid; min-width:0; gap:6px; }
+.guest-profile-booking > header > div > strong { color:#51483f; font-size:18px; }
+.guest-profile-booking > header > div > span { color:#8c847b; font-size:15px; }
+.guest-profile-booking-meta { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding-top:13px; border-top:1px solid var(--line); }
+.guest-profile-booking-meta > span { display:grid; gap:4px; }
+.guest-profile-booking-meta strong { color:#51483f; }
+.guest-profile-request { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin:0; padding-top:12px; border-top:1px solid var(--line); color:#716a63; font-size:15px; line-height:1.5; }
+.guest-profile-request p { margin:0; }
+.guest-profile-request strong { color:#51483f; }
+.guest-request-note-status { flex:none; padding:4px 9px; border-radius:14px; background:var(--amber-bg); color:var(--amber); font-size:13px; font-weight:600; white-space:nowrap; }
+.guest-request-note-status.is-noted { background:var(--green-bg); color:var(--green); }
+.guest-profile-empty { padding:28px; border:1px dashed var(--line); border-radius:8px; color:#8c847b; font-size:15px; text-align:center; }
+.guest-profile-actions { display:flex; justify-content:flex-end; padding-top:2px; }
+.guest-delete-dialog .assignment-header { margin-bottom:12px; }
+.guest-delete-consequence { margin:0; padding:12px; border:1px solid #eedbd8; border-radius:6px; background:#fcf6f5; color:#725550; font-size:15px; line-height:1.6; }
+@media (max-width:720px) { .guest-profile-backdrop { align-items:flex-start; padding:12px; }.assignment-dialog.guest-profile-dialog { max-height:calc(100vh - 24px); padding:20px; }.guest-profile-dialog .assignment-header h2 { font-size:25px; }.guest-profile-info { grid-template-columns:1fr; }.guest-profile-booking-meta { grid-template-columns:repeat(2,minmax(0,1fr)); } }

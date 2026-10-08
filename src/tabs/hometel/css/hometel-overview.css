@@ -1,0 +1,58 @@
+.metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+.metric-card { padding:18px 19px 17px; min-height:141px; }
+.metric-icon { width:34px; height:34px; border-radius:8px; display:grid; place-items:center; margin-bottom:14px; }
+.metric-icon.mint { color:#438a6c; background:#e6f1eb; }
+.metric-icon.lavender { color:#7870a6; background:#efedfa; }
+.metric-icon.peach { color:#bd7754; background:#f9ece5; }
+.metric-icon.yellow { color:#a68142; background:#f7f1df; }
+.metric-card p { margin:0; color:#8c867f; font-size:15px; }
+.metric-value { font-size:27px; font-weight:600; margin:5px 0 7px; letter-spacing:-.5px; }
+.metric-change { color:#9d9690; font-size:14px; }
+.metric-change span { color:#448666; font-weight:600; margin-right:4px; }
+.metric-change span svg { vertical-align:-3px; }
+.metric-change.negative span { color:#bf665d; }
+.dashboard-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(310px,1fr); gap:18px; margin-bottom:18px; }
+.chart-card,.action-card,.recent-card { padding:20px; }
+.chart-legend { margin-top:21px; display:flex; align-items:center; gap:7px; color:#9a938b; font-size:14px; }
+.chart-legend strong { color:#4a433e; font-size:18px; margin-left:1px; }
+.action-card { min-height:296px; }
+.action-card .card-heading { margin-bottom:10px; }
+.more-button { border:0; background:none; color:#a19b94; padding:0; }
+.attention-item { width:100%; display:flex; text-align:left; align-items:center; gap:10px; padding:12px 0; border:0; border-bottom:1px solid #f1eee9; background:none; color:var(--ink); }
+.attention-item:hover .attention-copy strong { color:var(--accent); }
+.attention-icon { width:29px; height:29px; border-radius:7px; background:#f6eee7; color:#bf7956; display:grid; place-items:center; }
+.attention-copy { flex:1; }
+.attention-copy strong,.attention-copy span { display:block; }
+.attention-copy strong { font-size:15px; font-weight:600; }
+.attention-copy span { color:#a29a93; font-size:13px; margin-top:3px; }
+.attention-item b { font-size:17px; font-weight:600; }
+.attention-arrow { color:#bab2aa; }
+.text-button { border:0; background:none; color:var(--accent); display:inline-flex; align-items:center; gap:6px; font-size:14px; font-weight:600; padding:0; }
+.action-card .text-button { margin-top:15px; }
+.recent-card .card-heading { margin-bottom:17px; }
+.metric-change { line-height:1.5; }
+.chart-empty { height:100%; display:grid; place-items:center; color:var(--muted); font-size:16px; }
+.metric-card { position:relative; width:100%; color:inherit; text-align:left; cursor:pointer; transition:transform .15s,box-shadow .15s,border-color .15s; }
+.metric-card:hover,.metric-card:focus-visible { transform:translateY(-2px); border-color:#d9b49d; box-shadow:0 5px 16px #33291c12; outline:none; }
+.metric-hint { display:flex; align-items:center; gap:3px; color:var(--accent); font-size:13px; margin-top:9px; opacity:0; transition:opacity .15s; }
+.metric-card:hover .metric-hint,.metric-card:focus-visible .metric-hint { opacity:1; }
+.metric-popup-backdrop { position:fixed; z-index:20; inset:0; display:grid; place-items:center; padding:20px; background:#2b211a66; }
+.metric-popup { width:min(560px,100%); max-height:min(720px,90vh); display:flex; flex-direction:column; overflow:hidden; box-shadow:0 16px 50px #21180f30; }
+.metric-popup-header { display:flex; justify-content:space-between; gap:20px; padding:23px 25px 18px; border-bottom:1px solid var(--line); }
+.metric-popup-header h2 { margin:0; font:600 27px 'Playfair Display',serif; }
+.metric-popup-header .eyebrow { margin-bottom:6px; }
+.metric-popup-header .subtitle { line-height:1.5; }
+.metric-popup-content { overflow-y:auto; padding:4px 25px; }
+.metric-popup-entry { display:grid; grid-template-columns:minmax(150px,1fr) minmax(120px,auto) auto; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid #f0ede9; }
+.metric-popup-room { display:flex; align-items:center; gap:9px; color:var(--accent); min-width:0; }
+.metric-popup-room div { min-width:0; }
+.metric-popup-room strong,.metric-popup-room span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.metric-popup-room strong { color:var(--ink); font-size:15px; }
+.metric-popup-room span,.metric-popup-meta { color:var(--muted); font-size:14px; }
+.metric-popup-meta { display:flex; flex-direction:column; gap:4px; }
+.metric-popup-meta strong { color:var(--ink); font-size:15px; }
+.metric-popup-footer { display:flex; justify-content:flex-end; padding:14px 25px; border-top:1px solid var(--line); }
+.metric-popup:focus { outline:none; }
+.eyebrow,.workspace-label,.brand small,.metric-change,.card-heading p,.attention-copy span,.text-button,.table-subtext,.room-number,.room-type,.room-card-current-guest small,.payment-error,.payment-success { font-size:15px; }
+.help-card strong,.subtitle,.button,.metric-card p,.attention-copy strong,.badge,.filter-button,.search-box input,.select-wrap select,.table-scroll td,.payment-entry label,.assignment-form label,.room-editor-form label,.room-maintenance-field,.payment-transaction-meta > span { font-size:17px; }
+.help-card span,.help-card button,.metric-popup-meta,.table-scroll th,.payment-view-button,.payment-status-summary,.guest-detail span,.room-meta,.room-maintenance-current-note { font-size:16px; }

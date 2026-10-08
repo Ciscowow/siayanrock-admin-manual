@@ -1,298 +1,111 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  Bell,
-  BedDouble,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  CircleDollarSign,
-  DoorOpen,
-  Ellipsis,
-  FileText,
-  Home,
-  Menu,
-  Mail,
-  MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Plane,
-  Search,
-  CheckCheck,
-  Trash2,
-  Users,
-  Wrench,
-  X,
-} from 'lucide-react'
-import {
-  Area,
-  AreaChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { Bell, CalendarDays, CircleDollarSign, LogOut, Menu, CheckCheck, X } from 'lucide-react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabaseClient'
+import { formatCurrency, formatDate, formatDateTime, hasSpecialRequest, hometelItems, mapSupabaseRoom, toDateKey, tourItems } from './tabs/shared'
+import type { Booking, BookingStatus, DashboardNotification, Guest, GuestAssignment, MetricDetail, MetricPopup, NewBookingValues, Room, RoomChangeRecord, RoomEditValues, SupabaseBooking } from './tabs/types'
+import HometelOverview, { MetricPopupDialog } from './tabs/hometel/hometel-overview'
+import { BookingsPage, BookingDrawer, BookingActionDialog, DeleteBookingDialog, EditBookingDialog, NewBookingDialog, GuestAssignmentDialog, RoomChangeDialog } from './tabs/hometel/hometel-bookings'
+import { RoomsPage } from './tabs/hometel/hometel-rooms'
+import { GuestsPage } from './tabs/hometel/hometel-guests'
+import { PaymentsPage } from './tabs/hometel/hometel-payments'
+import { ToursOverviewTab } from './tabs/tours/tours-overview'
+import { ToursBookingsTab } from './tabs/tours/tours-bookings'
+import { ToursPaymentsTab } from './tabs/tours/tours-payments'
+import AdminSignIn from './AdminSignIn'
 import './App.css'
 
-type BookingStatus = 'Confirmed' | 'Pending' | 'Checked in' | 'Completed' | 'Cancelled'
-type PaymentStatus = 'Paid' | 'Partial' | 'Unpaid' | 'Overpaid'
-
-type Booking = {
-  id: string
-  guestId: string
-  guest: string
-  initials: string
-  room: string
-  roomId: number
-  dates: string
-  checkIn: string
-  checkOut: string
-  createdAt: string
-  guests: number
-  amount: number
-  paid: number
-  invoiceSentAt?: string | null
-  payments: { id?: string; amount: number; paidAt: string | null; method: string; type: string; status: string }[]
-  status: BookingStatus
-  payment: PaymentStatus
-  color: string
-  email: string
-  phone: string
-  request: string
-}
-
-type Room = {
-  id: string
-  name: string
-  type: string
-  status: 'occupied' | 'vacant'
-  isActive: boolean
-  isUnderMaintenance: boolean
-  maintenanceNote: string
-  guest: string
-  rate: number
-  capacity: number
-  notes: string
-}
-
-type Guest = {
-  id: string
-  full_name: string
-  email: string | null
-  phone: string | null
-  created_at: string
-}
-
-type SupabaseBooking = {
-  id: string
-  guest_id: string
-  room_id: number
-  check_in: string
-  check_out: string
-  num_of_guests: number
-  total_price: number | string
-  created_at: string
-  status: string
-  payment_status: string | null
-  invoice_sent_at?: string | null
-  special_requests: string | null
-  guests: { full_name: string; email: string | null; phone: string | null } | null
-  rooms: { room_name: string; room_number: string | null } | null
-  payments: { id?: string; amount: number | string; payment_status: string | null; paid_at: string | null; payment_method: string | null; payment_type: string | null }[] | null
-  booking_room_changes: { credit_amount: number | string; credit_returned: boolean | null }[] | null
-}
-
-type SupabaseRoom = {
-  id: number
-  room_name: string | null
-  room_number: string | null
-  room_type: string | null
-  room_price: number | string | null
-  max_guests: number | null
-  base_guests: number | null
-  is_active: boolean | null
-  occupancy_status: 'occupied' | 'vacant' | null
-  maintenance_status: boolean | null
-  maintenance_note: string | null
-  description: string | null
-}
-
-type RoomEditValues = {
-  name: string
-  type: string
-  rate: string
-  capacity: string
-  notes: string
-}
-
-type MetricDetail = {
-  booking?: Booking
-  room?: Room
-  detail: string
-  amount?: number
-  statusOverride?: string
-}
-
-type MetricPopup = {
-  title: string
-  description: string
-  entries: MetricDetail[]
-}
-
-type DashboardNotification = {
-  id: string
-  title: string
-  detail: string
-  createdAt: string
-  category: 'booking' | 'payment'
-  relatedId: string
-  read: boolean
-}
-
-type GuestAssignment = {
-  roomId: number
-  checkIn: string
-  checkOut: string
-  guestCount: number
-}
-
-type NewBookingValues = {
-  fullName: string
-  email: string
-  phone: string
-  roomId: number
-  checkIn: string
-  checkOut: string
-  guestCount: number
-  specialRequests: string
-  status: 'pending' | 'confirmed'
-}
-
-type RoomChangeRecord = {
-  id: string
-  booking_id: string
-  previous_room_id: number
-  new_room_id: number
-  previous_total: number
-  new_total: number
-  paid_at_change: number
-  credit_amount: number
-  credit_returned: boolean
-  credit_returned_at: string | null
-  note: string
-  created_at: string
-}
-
-type PaymentTransaction = {
-  id: string
-  booking: Booking
-  amount: number
-  displayAmount: number
-  paidAt: string | null
-  occurredAt: string | null
-  method: string
-  type: string
-  transaction: string
-  transactionStatus: string
-  isCreditReturn: boolean
-  isStatusOnly: boolean
-}
-
-const hasSpecialRequest = (booking: Booking) => {
-  const request = booking.request.trim()
-  return request.length > 0 && request.toLowerCase() !== 'no special requests.'
-}
-
-const mapSupabaseRoom = (record: SupabaseRoom): Room => ({
-  id: String(record.id),
-  name: record.room_name ?? `Room ${record.room_number ?? record.id}`,
-  type: record.room_type ?? 'Standard',
-  status: record.occupancy_status === 'occupied' ? 'occupied' : 'vacant',
-  isActive: record.is_active !== false,
-  isUnderMaintenance: record.maintenance_status === true,
-  maintenanceNote: record.maintenance_note ?? '',
-  guest: '',
-  rate: Number(record.room_price ?? 0),
-  capacity: Number(record.max_guests ?? record.base_guests ?? 2),
-  notes: record.description ?? '',
-})
-
-const roomImages: Record<string, string> = {
-  batan: '/rooms/batan-1.jpg',
-  dinem: '/rooms/dinem-1.jpg',
-  ditarem: '/rooms/ditarem-1.jpg',
-  itbayat: '/rooms/itbayat-1.jpg',
-  mavudis: '/rooms/mavudis-1.jpg',
-  maysanga: '/rooms/maysanga-1.jpg',
-  sabtang: '/rooms/sabtang-1.jpg',
-  siayan: '/rooms/siayan-1.jpg',
-  vuhus: '/rooms/vuhus-1.jpg',
-}
-
-const hometelItems = [
-  { label: 'Overview', icon: Home, count: undefined },
-  { label: 'Bookings', icon: CalendarDays, count: undefined },
-  { label: 'Rooms', icon: BedDouble, count: undefined },
-  { label: 'Guests', icon: Users, count: undefined },
-  { label: 'Payments', icon: CircleDollarSign, count: undefined },
-]
-
-const tourItems = [
-  { label: 'Overview', icon: Plane, count: undefined },
-  { label: 'Bookings', icon: CalendarDays, count: undefined },
-  { label: 'Payments', icon: CircleDollarSign, count: undefined },
-]
-
-function formatCurrency(value: number) {
-  return `₱${value.toLocaleString('en-PH')}`
-}
-
-function toDateKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-function formatDate(value: string | null) {
-  if (!value) return 'Date unavailable'
-  const date = new Date(`${value.slice(0, 10)}T00:00:00`)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatDateTime(value: string | null) {
-  if (!value) return 'Date unavailable'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
-
-function StatusBadge({ children, kind = 'neutral' }: { children: React.ReactNode; kind?: string }) {
-  return <span className={`badge badge-${kind.toLowerCase().replace(' ', '-')}`}><span className="badge-dot" />{children}</span>
-}
-
-function statusKind(status: string) {
-  return status === 'Confirmed' || status === 'Paid' ? 'success' : status === 'Pending' || status === 'Partial' || status === 'Overpaid' || status === 'Refund due' ? 'warning' : status === 'Checked in' ? 'info' : status === 'Unpaid' || status === 'Cancelled' ? 'danger' : 'neutral'
-}
-
 function App() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authError, setAuthError] = useState('')
+
+  useEffect(() => {
+    let isMounted = true
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) return
+      setSession(nextSession)
+      setAuthError('')
+      setAuthLoading(false)
+    })
+
+    void supabase.auth.getSession().then(({ data, error }) => {
+      if (!isMounted) return
+      if (error) {
+        console.error('Unable to retrieve the admin session:', error)
+        setAuthError(`Unable to check your sign-in status: ${error.message}`)
+      } else {
+        setSession(data.session)
+      }
+      setAuthLoading(false)
+    }).catch((error: unknown) => {
+      if (!isMounted) return
+      console.error('Unable to retrieve the admin session:', error)
+      setAuthError('Unable to check your sign-in status. Check your connection and reload.')
+      setAuthLoading(false)
+    })
+
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  const signIn = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      console.error('Admin sign-in failed:', error)
+      return error.message
+    }
+    return null
+  }
+
+  const signOut = async () => {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      console.error('Admin sign-out failed:', error)
+      return `Unable to sign out: ${error.message}`
+    }
+    return null
+  }
+
+  if (authLoading) {
+    return <div className="auth-loading" role="status">Checking admin session…</div>
+  }
+  if (authError && !session) {
+    return <div className="auth-loading auth-error" role="alert">{authError}</div>
+  }
+  if (!session) return <AdminSignIn onSignIn={signIn} />
+
+  return <DashboardApp userEmail={session.user.email ?? ''} onSignOut={signOut} />
+}
+
+function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: () => Promise<string | null> }) {
   const [activeNav, setActiveNav] = useState('Overview')
   const [activeGroup, setActiveGroup] = useState<'hometel' | 'tours'>('hometel')
   const [bookings, setBookings] = useState<Booking[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [guests, setGuests] = useState<Guest[]>([])
+  const [bookingsLoadError, setBookingsLoadError] = useState('')
   const [roomChanges, setRoomChanges] = useState<RoomChangeRecord[]>([])
   const [roomChangeSetupError, setRoomChangeSetupError] = useState('')
   const [dataLoading, setDataLoading] = useState(true)
   const [roomStatusError, setRoomStatusError] = useState('')
   const [updatingRoomId, setUpdatingRoomId] = useState<string | null>(null)
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null)
+  const [bookingPaymentOpen, setBookingPaymentOpen] = useState(false)
   const [notifications, setNotifications] = useState<DashboardNotification[]>([])
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [toastNotification, setToastNotification] = useState<Omit<DashboardNotification, 'read'> | null>(null)
   const [newBookingOpen, setNewBookingOpen] = useState(false)
   const [newBookingError, setNewBookingError] = useState('')
   const [newBookingSaving, setNewBookingSaving] = useState(false)
+  const [bookingToEdit, setBookingToEdit] = useState<Booking | null>(null)
+  const [editBookingError, setEditBookingError] = useState('')
+  const [editBookingSaving, setEditBookingSaving] = useState(false)
+  const [bookingToDelete, setBookingToDelete] = useState<Booking | null>(null)
+  const [bookingDeleteError, setBookingDeleteError] = useState('')
+  const [bookingDeleteSaving, setBookingDeleteSaving] = useState(false)
   const [assigningGuest, setAssigningGuest] = useState<Guest | null>(null)
   const [changingGuestRoom, setChangingGuestRoom] = useState<Guest | null>(null)
   const [assignmentError, setAssignmentError] = useState('')
@@ -312,6 +125,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenu, setMobileMenu] = useState(false)
   const [range, setRange] = useState('Last 30 days')
+  const [accountError, setAccountError] = useState('')
 
   const roomsRef = useRef(rooms)
   const guestsRef = useRef(guests)
@@ -350,6 +164,7 @@ function App() {
 
       if (error) {
         console.error('Unable to load bookings from Supabase:', error)
+        if (isMounted) setBookingsLoadError(`Could not load bookings: ${error.message}`)
         return
       }
 
@@ -399,10 +214,12 @@ function App() {
             email: guest?.email ?? '',
             phone: guest?.phone ?? '',
             request: record.special_requests ?? 'No special requests.',
+            specialRequestNoted: Boolean(record.special_requests_noted),
           }
         })
 
         setBookings(mappedBookings)
+        setBookingsLoadError('')
       }
     }
 
@@ -475,6 +292,7 @@ function App() {
           total_price?: number | string
           status?: string
           special_requests?: string | null
+          special_requests_noted?: boolean | null
           created_at?: string
         }
         if (!booking.id) return
@@ -520,6 +338,7 @@ function App() {
             email: guestEmail,
             phone: guestPhone,
             request: booking.special_requests ?? 'No special requests.',
+            specialRequestNoted: Boolean(booking.special_requests_noted),
           }
           setBookings((items) => items.some((item) => item.id === liveBooking.id) ? items : [liveBooking, ...items])
           pushNotification({
@@ -769,7 +588,8 @@ function App() {
   const specialRequestBookings = bookings.filter((booking) =>
     booking.status !== 'Cancelled' &&
     booking.status !== 'Completed' &&
-    hasSpecialRequest(booking),
+    hasSpecialRequest(booking) &&
+    !booking.specialRequestNoted,
   )
   const rangeDays = range === 'Last 7 days'
     ? 7
@@ -793,6 +613,22 @@ function App() {
     if (!selectedBooking) return
     setBookings((items) => items.map((item) => item.id === selectedBooking.id ? { ...item, status } : item))
     setSelectedBooking({ ...selectedBooking, status })
+  }
+
+  const saveBookingStatus = async (booking: Booking, status: BookingStatus) => {
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: status.toLowerCase().replace(' ', '_') })
+      .eq('id', booking.id)
+
+    if (error) {
+      console.error('Unable to update booking status:', error)
+      return false
+    }
+
+    setBookings((items) => items.map((item) => item.id === booking.id ? { ...item, status } : item))
+    setSelectedBooking((item) => item?.id === booking.id ? { ...item, status } : item)
+    return true
   }
 
   const addBookingPayment = async (amount: number, method: string) => {
@@ -928,6 +764,7 @@ function App() {
       email: guest.email ?? '',
       phone: guest.phone ?? '',
       request: 'No special requests.',
+      specialRequestNoted: false,
     }
     setBookings((items) => [booking, ...items])
     pushNotification({
@@ -1063,6 +900,7 @@ function App() {
       email: guest.email ?? '',
       phone: guest.phone ?? '',
       request: values.specialRequests.trim() || 'No special requests.',
+      specialRequestNoted: false,
     }
     setBookings((items) => [booking, ...items])
     pushNotification({
@@ -1079,6 +917,153 @@ function App() {
     setNewBookingOpen(false)
     setNewBookingSaving(false)
     nav('Bookings')
+  }
+
+  const updateBookingDetails = async (booking: Booking, assignment: GuestAssignment) => {
+    setEditBookingError('')
+    const room = rooms.find((item) => Number(item.id) === assignment.roomId)
+    if (!room || !room.isActive || room.isUnderMaintenance) {
+      setEditBookingError('Choose an active room that is not under maintenance.')
+      return false
+    }
+    const today = toDateKey(new Date())
+    if (assignment.checkOut <= assignment.checkIn) {
+      setEditBookingError('Choose a valid stay: check-out must be after check-in.')
+      return false
+    }
+    if (!Number.isInteger(assignment.guestCount) || assignment.guestCount < 1 || assignment.guestCount > room.capacity) {
+      setEditBookingError(`This room allows up to ${room.capacity} guests.`)
+      return false
+    }
+    const hasConflict = bookings.some((otherBooking) =>
+      otherBooking.id !== booking.id &&
+      otherBooking.roomId === assignment.roomId &&
+      otherBooking.status !== 'Cancelled' &&
+      otherBooking.status !== 'Completed' &&
+      otherBooking.checkIn < assignment.checkOut &&
+      otherBooking.checkOut > assignment.checkIn,
+    )
+    const includesToday = assignment.checkIn <= today && assignment.checkOut > today
+    if (hasConflict || assignment.roomId !== booking.roomId && includesToday && room.status === 'occupied') {
+      setEditBookingError('That room is already occupied or booked for part of those dates. Select another room or stay period.')
+      return false
+    }
+
+    setEditBookingSaving(true)
+    const nights = Math.round((new Date(`${assignment.checkOut}T00:00:00`).getTime() - new Date(`${assignment.checkIn}T00:00:00`).getTime()) / 86_400_000)
+    const totalPrice = room.rate * nights
+    const paymentStatus = booking.paid > totalPrice
+      ? 'overpaid'
+      : totalPrice > 0 && booking.paid >= totalPrice
+        ? 'paid'
+        : booking.paid > 0
+          ? 'partial'
+          : 'unpaid'
+    const specialRequests = assignment.specialRequests?.trim() ?? ''
+    const specialRequestNoted = Boolean(
+      booking.specialRequestNoted &&
+      specialRequests === (booking.request === 'No special requests.' ? '' : booking.request),
+    )
+    const { data, error } = await supabase.from('bookings').update({
+      room_id: assignment.roomId,
+      check_in: assignment.checkIn,
+      check_out: assignment.checkOut,
+      num_of_guests: assignment.guestCount,
+      total_price: totalPrice,
+      payment_status: paymentStatus,
+      special_requests: specialRequests || null,
+      special_requests_noted: specialRequestNoted,
+    }).eq('id', booking.id).select('id').maybeSingle()
+
+    if (error) {
+      console.error('Unable to update booking details:', error)
+      setEditBookingError(`Could not update booking: ${error.message}`)
+      setEditBookingSaving(false)
+      return false
+    }
+    if (!data) {
+      setEditBookingError('The booking update was not confirmed by the database. Refresh and check before retrying.')
+      setEditBookingSaving(false)
+      return false
+    }
+
+    const updatedBooking: Booking = {
+      ...booking,
+      room: room.name,
+      roomId: assignment.roomId,
+      dates: `${assignment.checkIn} – ${assignment.checkOut}`,
+      checkIn: assignment.checkIn,
+      checkOut: assignment.checkOut,
+      guests: assignment.guestCount,
+      amount: totalPrice,
+      request: specialRequests || 'No special requests.',
+      specialRequestNoted,
+      payment: paymentStatus === 'overpaid' ? 'Overpaid' : paymentStatus === 'paid' ? 'Paid' : paymentStatus === 'partial' ? 'Partial' : 'Unpaid',
+    }
+    setBookings((items) => items.map((item) => item.id === booking.id ? updatedBooking : item))
+    setBookingToEdit(null)
+    setEditBookingSaving(false)
+    return true
+  }
+
+  const setBookingSpecialRequestNoted = async (booking: Booking, noted: boolean) => {
+    if (noted && !hasSpecialRequest(booking)) return 'Add a special request before marking it as noted.'
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ special_requests_noted: noted })
+      .eq('id', booking.id)
+      .select('id')
+      .maybeSingle()
+
+    if (error) {
+      console.error('Unable to update special request noted status:', error)
+      if (error.code === '42703' || error.code === 'PGRST204' || error.message.includes('special_requests_noted')) {
+        return 'Apply supabase/migrations/20261008220000_track_special_request_acknowledgement.sql in Supabase, then refresh.'
+      }
+      if (error.code === '42501' || error.message.toLowerCase().includes('row-level security')) {
+        return 'Supabase denied this update. Check the bookings table UPDATE permissions.'
+      }
+      return `Could not save noted status: ${error.message}`
+    }
+    if (!data) {
+      console.error('Special request noted status update was not confirmed:', booking.id)
+      return 'Supabase did not update this booking. Verify it still exists and that the bookings UPDATE policy allows this signed-in admin to change it.'
+    }
+
+    setBookings((items) => items.map((item) => item.id === booking.id
+      ? { ...item, specialRequestNoted: noted }
+      : item))
+    return null
+  }
+
+  const deleteBookingAndHistory = async () => {
+    if (!bookingToDelete) return
+    const booking = bookingToDelete
+    setBookingDeleteError('')
+    setBookingDeleteSaving(true)
+    const { data, error } = await supabase.rpc('delete_booking_with_history', {
+      p_booking_id: booking.id,
+    })
+
+    if (error) {
+      console.error('Unable to delete booking and related history:', error)
+      setBookingDeleteError(error.message.includes('delete_booking_with_history')
+        ? 'Apply the booking deletion migration in Supabase, then try again.'
+        : `Could not delete booking: ${error.message}`)
+      setBookingDeleteSaving(false)
+      return
+    }
+    if (data !== booking.id) {
+      setBookingDeleteError('The booking was not deleted. Refresh the booking list before trying again.')
+      setBookingDeleteSaving(false)
+      return
+    }
+
+    setBookings((items) => items.filter((item) => item.id !== booking.id))
+    setRoomChanges((items) => items.filter((item) => item.booking_id !== booking.id))
+    setSelectedBooking((item) => item?.id === booking.id ? null : item)
+    setBookingToDelete(null)
+    setBookingDeleteSaving(false)
   }
 
   const changeGuestRoom = async (booking: Booking, roomId: number, note: string) => {
@@ -1384,11 +1369,16 @@ function App() {
     <div className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? '' : 'sidebar-collapsed'} ${mobileMenu ? 'sidebar-mobile-open' : ''}`}>
         <div className="brand">
-          <div className="brand-mark">S</div>
-          {sidebarOpen && <div><strong>SiayanRock</strong><small>ADMIN</small></div>}
-          <button className="icon-button sidebar-toggle" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}>
-            {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+          <button
+            className="brand-logo-button"
+            type="button"
+            onClick={() => setSidebarOpen((isOpen) => !isOpen)}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+          >
+            <img className="brand-mark" src="/siayanrock-logo.jpg" alt="" />
           </button>
+          {sidebarOpen && <div><strong>SiayanRock</strong><small>ADMIN</small></div>}
         </div>
         <div className="workspace-label">{sidebarOpen && 'HOMETEL'}</div>
         <nav className="nav-list" aria-label="Main navigation">
@@ -1411,6 +1401,10 @@ function App() {
           <button className="mobile-menu-button icon-button" onClick={() => setMobileMenu(!mobileMenu)} aria-label="Open menu"><Menu size={21} /></button>
           <div className="breadcrumb"><span>{activeGroup === 'hometel' ? 'Hometel' : 'Tours'}</span><span className="slash">/</span><strong>{activeNav}</strong></div>
           <div className="topbar-actions">
+            <span className="admin-account-email">{userEmail}</span>
+            <button className="admin-sign-out button button-secondary" type="button" onClick={async () => setAccountError((await onSignOut()) ?? '')} aria-label="Sign out">
+              <LogOut size={16} /><span>Sign out</span>
+            </button>
             <div className="notification-container">
               <button
                 className="icon-button notification-button"
@@ -1446,6 +1440,7 @@ function App() {
                   ))}</div>}
               </section>}
             </div>
+            {accountError && <div className="admin-account-error" role="alert">{accountError}</div>}
           </div>
           {toastNotification && <div className="notification-toast" role="status">
             <button className="notification-toast-open" onClick={() => openNotification(toastNotification)}>
@@ -1459,68 +1454,43 @@ function App() {
         </header>
 
         <div className="page-content">
-          {activeGroup === 'tours' ? (
-            <ToursWorkspacePage title={activeNav} />
-          ) : activeNav === 'Overview' ? (
-            <>
-              <div className="page-heading">
-                <div><p className="eyebrow">{today.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p><h1>Overview <span>✦</span></h1><p className="subtitle">Here’s what’s happening across your Hometel and tour operations today.</p></div>
-              </div>
-              <section className="metric-grid">
-                <MetricCard label="Guests invoiced" value={dataLoading ? '—' : String(invoiceSentGuests.size)} icon={<Mail size={19} />} color="mint" onClick={() => openMetricPopup('invoices')} />
-                <MetricCard label="Revenue this month" value={dataLoading ? '—' : formatCurrency(monthRevenue)} icon={<CircleDollarSign size={19} />} color="lavender" onClick={() => openMetricPopup('revenue')} />
-                <MetricCard label="Today’s check-ins" value={dataLoading ? '—' : String(todayCheckIns)} icon={<ArrowDownRight size={19} />} color="peach" onClick={() => openMetricPopup('check-ins')} />
-                <MetricCard label="Today’s check-outs" value={dataLoading ? '—' : String(todayCheckOuts)} icon={<ArrowUpRight size={19} />} color="yellow" onClick={() => openMetricPopup('check-outs')} />
-              </section>
-              <div className="dashboard-grid">
-                <section className="card chart-card">
-                  <div className="card-heading"><div><h2>Booking overview</h2><p>Bookings created over time</p></div><label className="select-wrap"><select value={range} onChange={(e) => setRange(e.target.value)}><option>Last 30 days</option><option>Last 7 days</option><option>This year</option></select><ChevronDown size={14} /></label></div>
-                  <div className="chart-legend"><span className="legend-dot" /> Bookings <strong>{dataLoading ? '—' : bookingsInRange}</strong></div>
-                  <div className="chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 10, right: 4, left: -24, bottom: 0 }}><defs><linearGradient id="bookingFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d69b77" stopOpacity={0.3} /><stop offset="100%" stopColor="#d69b77" stopOpacity={0.02} /></linearGradient></defs><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#9b9690', fontSize: 11 }} interval="preserveStartEnd" /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#9b9690', fontSize: 11 }} allowDecimals={false} domain={[0, (max: number) => Math.max(max, 1)]} /><Tooltip contentStyle={{ border: '1px solid #eee9e2', borderRadius: 10, boxShadow: '0 4px 15px #33291c12', fontSize: 12 }} /><Area type="monotone" dataKey="value" stroke="#c77d52" strokeWidth={2.5} fill="url(#bookingFill)" /></AreaChart></ResponsiveContainer></div>
-                </section>
-                <section className="card action-card">
-                  <div className="card-heading"><div><h2>Needs your attention</h2><p>Items that need action today</p></div><button className="more-button" aria-label="More options"><MoreHorizontal size={18} /></button></div>
-                  <AttentionItem icon={<CalendarDays size={16} />} title="Pending bookings" detail={`${pendingBookings.length} awaiting confirmation`} count={dataLoading ? '—' : String(pendingBookings.length)} onClick={() => { setStatusFilter('Pending'); nav('Bookings') }} />
-                  <AttentionItem icon={<CircleDollarSign size={16} />} title="Payment issues" detail={`${paymentAttentionBookings.filter((booking) => booking.payment === 'Partial').length} partial · ${paymentAttentionBookings.filter((booking) => booking.payment === 'Unpaid').length} unpaid · ${paymentAttentionBookings.filter((booking) => booking.payment === 'Overpaid').length} overpaid · ${creditItemsDueCount} refunds due`} count={dataLoading ? '—' : String(paymentAttentionBookings.length + creditItemsDueCount)} onClick={() => { setPaymentStatusFilter('All statuses'); nav('Payments') }} />
-                  <AttentionItem icon={<FileText size={16} />} title="Special requests" detail={`${specialRequestBookings.length} bookings need request review`} count={dataLoading ? '—' : String(specialRequestBookings.length)} onClick={() => { setQuery(''); setStatusFilter('All statuses'); setSpecialRequestsOnly(true); nav('Bookings') }} />
-                  <button className="text-button" onClick={() => nav('Bookings')}>View all items <ArrowUpRight size={14} /></button>
-                </section>
-              </div>
-              <section className="card recent-card">
-                <div className="card-heading"><div><h2>Recent bookings</h2><p>Latest activity from your property</p></div><button className="text-button" onClick={() => nav('Bookings')}>View all bookings <ArrowUpRight size={14} /></button></div>
-                <BookingTable bookings={bookings.slice(0, 4)} onSelect={setSelectedBooking} compact />
-              </section>
-            </>
+          {activeGroup === 'tours' ? (activeNav === 'Bookings' ? <ToursBookingsTab /> : activeNav === 'Payments' ? <ToursPaymentsTab /> : <ToursOverviewTab />) : activeNav === 'Overview' ? (
+            <HometelOverview today={today} dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} bookingsInRange={bookingsInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
           ) : activeNav === 'Bookings' ? (
-            <BookingsPage bookings={bookings} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onSelect={setSelectedBooking} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
+            <BookingsPage bookings={bookings} loadError={bookingsLoadError} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} onEditBooking={(booking) => { setEditBookingError(''); setBookingToEdit(booking) }} onDeleteBooking={(booking) => { setBookingDeleteError(''); setBookingToDelete(booking) }} onSpecialRequestNoted={setBookingSpecialRequestNoted} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
           ) : activeNav === 'Rooms' ? (
             <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onUpdateRoom={updateRoomDetails} onSetMaintenance={setRoomMaintenance} updatingRoomId={updatingRoomId} error={roomStatusError} />
           ) : activeNav === 'Guests' ? (
-            <GuestsPage guests={guests} bookings={bookings} query={query} setQuery={setQuery} onChangeRoom={(guest) => { setAssignmentError(''); setChangingGuestRoom(guest) }} onDeleteGuest={deleteGuestAndHistory} deleteSavingId={guestDeleteSavingId} deleteError={guestDeleteError} />
+            <GuestsPage guests={guests} bookings={bookings} query={query} setQuery={setQuery} onDeleteGuest={deleteGuestAndHistory} deleteSavingId={guestDeleteSavingId} deleteError={guestDeleteError} />
           ) : activeNav === 'Payments' ? (
-            <PaymentsPage
-              bookings={bookings}
-              roomChanges={roomChanges}
-              query={paymentQuery}
-              setQuery={setPaymentQuery}
-              statusFilter={paymentStatusFilter}
-              setStatusFilter={setPaymentStatusFilter}
-              onMarkCreditReturned={markRoomChangeCreditReturned}
-              onReturnOverpayment={returnBookingOverpayment}
-              onInvoiceSent={(bookingIds, sentAt) => {
-                setBookings((items) => items.map((booking) => bookingIds.includes(booking.id) ? { ...booking, invoiceSentAt: sentAt } : booking))
-                setSelectedBooking((booking) => booking && bookingIds.includes(booking.id) ? { ...booking, invoiceSentAt: sentAt } : booking)
-              }}
-              creditReturnSavingId={creditReturnSavingId}
-              creditStatusError={creditStatusError}
-            />
-          ) : (
-            <PlaceholderPage title={activeNav} onBack={() => nav('Overview')} />
-          )}
+            <PaymentsPage bookings={bookings} roomChanges={roomChanges} query={paymentQuery} setQuery={setPaymentQuery} statusFilter={paymentStatusFilter} setStatusFilter={setPaymentStatusFilter} onMarkCreditReturned={markRoomChangeCreditReturned} onReturnOverpayment={returnBookingOverpayment} onInvoiceSent={(bookingIds, sentAt) => { setBookings((items) => items.map((booking) => bookingIds.includes(booking.id) ? { ...booking, invoiceSentAt: sentAt } : booking)); setSelectedBooking((booking) => booking && bookingIds.includes(booking.id) ? { ...booking, invoiceSentAt: sentAt } : booking) }} creditReturnSavingId={creditReturnSavingId} creditStatusError={creditStatusError} />
+          ) : <div className="empty-state"><strong>Tab not found</strong></div>}
         </div>
       </main>
 
-      {selectedBooking && <BookingDrawer booking={selectedBooking} onClose={() => { setSelectedBooking(null); setPaymentError('') }} onStatusChange={updateBookingStatus} onAddPayment={addBookingPayment} paymentError={paymentError} paymentSaving={paymentSaving} />}
+      {selectedBooking && bookingPaymentOpen ? <BookingActionDialog
+        booking={selectedBooking}
+        onClose={() => { if (!paymentSaving) { setBookingPaymentOpen(false); setSelectedBooking(null); setPaymentError('') } }}
+        onAddPayment={addBookingPayment}
+        paymentError={paymentError}
+        paymentSaving={paymentSaving}
+      /> : selectedBooking && <BookingDrawer booking={selectedBooking} onClose={() => { setSelectedBooking(null); setPaymentError('') }} onStatusChange={updateBookingStatus} onAddPayment={addBookingPayment} paymentError={paymentError} paymentSaving={paymentSaving} />}
+      {bookingToEdit && <EditBookingDialog
+        booking={bookingToEdit}
+        rooms={rooms}
+        bookings={bookings}
+        error={editBookingError}
+        saving={editBookingSaving}
+        onClose={() => { if (!editBookingSaving) setBookingToEdit(null) }}
+        onSave={updateBookingDetails}
+      />}
+      {bookingToDelete && <DeleteBookingDialog
+        booking={bookingToDelete}
+        error={bookingDeleteError}
+        saving={bookingDeleteSaving}
+        onClose={() => { if (!bookingDeleteSaving) setBookingToDelete(null) }}
+        onConfirm={() => void deleteBookingAndHistory()}
+      />}
       {newBookingOpen && <NewBookingDialog rooms={rooms} guests={guests} bookings={bookings} error={newBookingError} saving={newBookingSaving} onClose={() => { if (!newBookingSaving) setNewBookingOpen(false) }} onCreate={createNewBooking} />}
       {assigningGuest && <GuestAssignmentDialog guest={assigningGuest} rooms={rooms} bookings={bookings} error={assignmentError} saving={assignmentSaving} onClose={() => { if (!assignmentSaving) setAssigningGuest(null) }} onAssign={(assignment) => assignGuestToRoom(assigningGuest, assignment)} />}
       {changingGuestRoom && <RoomChangeDialog
@@ -1536,1005 +1506,6 @@ function App() {
       {metricPopup && <MetricPopupDialog popup={metricPopup} loading={dataLoading} onClose={() => setMetricPopup(null)} />}
     </div>
   )
-}
-
-function MetricCard({ label, value, icon, color, onClick }: { label: string; value: string; icon: React.ReactNode; color: string; onClick: () => void }) {
-  return <button className="card metric-card" onClick={onClick} aria-label={`${label}: ${value}. View details`}><div className={`metric-icon ${color}`}>{icon}</div><p>{label}</p><div className="metric-value">{value}</div><span className="metric-hint">View details <ArrowUpRight size={12} /></span></button>
-}
-
-function MetricPopupDialog({ popup, loading, onClose }: { popup: MetricPopup; loading: boolean; onClose: () => void }) {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
-  return <div className="metric-popup-backdrop" onMouseDown={(event) => {
-    if (event.target === event.currentTarget) onClose()
-  }}>
-    <section className="metric-popup card" role="dialog" aria-modal="true" aria-labelledby="metric-popup-title">
-      <header className="metric-popup-header">
-        <div><p className="eyebrow">Overview details</p><h2 id="metric-popup-title">{popup.title}</h2><p className="subtitle">{popup.description}</p></div>
-      </header>
-      <div className="metric-popup-content">
-        {loading ? <div className="empty-state"><strong>Loading details…</strong></div> : popup.entries.length === 0 ? (
-          <div className="empty-state"><CalendarDays size={25} /><strong>No records to show</strong><span>There are no matching records for this metric.</span></div>
-        ) : popup.entries.map(({ booking, room, detail, amount, statusOverride }, index) => (
-          <article className="metric-popup-entry" key={`${booking?.id ?? room?.id}-${detail}-${index}`}>
-            <div className="metric-popup-room"><BedDouble size={17} /><div><strong>{booking?.room ?? room?.name}</strong><span>{booking ? `${booking.guest} · ${booking.id}` : 'Manually set occupied'}</span></div></div>
-            <div className="metric-popup-meta"><span>{detail}</span>{amount !== undefined && <strong className={amount < 0 ? 'credit-amount' : undefined}>{amount < 0 ? '−' : ''}{formatCurrency(Math.abs(amount))}</strong>}</div>
-            <StatusBadge kind={statusOverride === 'Sent' || popup.title === 'Revenue this month' ? 'success' : statusOverride ? 'warning' : booking ? statusKind(booking.status) : 'info'}>
-              {statusOverride ?? (popup.title === 'Revenue this month' ? 'Paid' : booking ? booking.status : 'Occupied')}
-            </StatusBadge>
-          </article>
-        ))}
-      </div>
-      <footer className="metric-popup-footer"><button className="button button-secondary" onClick={onClose}>Close</button></footer>
-    </section>
-  </div>
-}
-
-function AttentionItem({ icon, title, detail, count, onClick }: { icon: React.ReactNode; title: string; detail: string; count: string; onClick: () => void }) {
-  return <button className="attention-item" onClick={onClick}><div className="attention-icon">{icon}</div><div className="attention-copy"><strong>{title}</strong><span>{detail}</span></div><b>{count}</b><ArrowUpRight size={15} className="attention-arrow" /></button>
-}
-
-function BookingsPage({ bookings, query, setQuery, statusFilter, setStatusFilter, specialRequestsOnly, setSpecialRequestsOnly, onSelect, onCreateBooking }: { bookings: Booking[]; query: string; setQuery: (v: string) => void; statusFilter: string; setStatusFilter: (v: string) => void; specialRequestsOnly: boolean; setSpecialRequestsOnly: (value: boolean) => void; onSelect: (b: Booking) => void; onCreateBooking: () => void }) {
-  const [expandedGuestKeys, setExpandedGuestKeys] = useState<Set<string>>(new Set())
-  const monthGroups = useMemo(() => {
-    const months = new Map<string, Map<string, { key: string; guest: Booking; bookings: Booking[] }>>()
-    bookings.forEach((booking) => {
-      const monthKey = booking.checkIn.slice(0, 7)
-      const normalizedEmail = booking.email.trim().toLowerCase()
-      const normalizedPhone = booking.phone.replace(/\D/g, '')
-      const identityKey = normalizedEmail
-        ? `email:${normalizedEmail}`
-        : normalizedPhone
-          ? `phone:${normalizedPhone}`
-          : `guest:${booking.guestId}`
-      const guestKey = `${monthKey}:${identityKey}`
-      const guestsInMonth = months.get(monthKey) ?? new Map<string, { key: string; guest: Booking; bookings: Booking[] }>()
-      const guestGroup = guestsInMonth.get(identityKey) ?? { key: guestKey, guest: booking, bookings: [] }
-      guestGroup.bookings.push(booking)
-      guestsInMonth.set(identityKey, guestGroup)
-      months.set(monthKey, guestsInMonth)
-    })
-
-    return Array.from(months, ([monthKey, guestsInMonth]) => ({
-      key: monthKey,
-      label: new Date(`${monthKey}-01T00:00:00`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' }),
-      guests: Array.from(guestsInMonth.values())
-        .map((group) => ({
-          ...group,
-          bookings: group.bookings.sort((left, right) =>
-            left.checkIn.localeCompare(right.checkIn) || right.createdAt.localeCompare(left.createdAt)),
-        }))
-        .sort((left, right) => left.bookings[0].checkIn.localeCompare(right.bookings[0].checkIn)),
-    })).sort((left, right) => left.key.localeCompare(right.key))
-  }, [bookings])
-  const visibleMonthGroups = monthGroups.map((month) => ({
-    ...month,
-    guests: month.guests.filter(({ bookings: guestBookings }) => guestBookings.some((booking) => {
-      const matchesQuery = `${booking.guest} ${booking.id} ${booking.room}`.toLowerCase().includes(query.trim().toLowerCase())
-      const matchesStatus = statusFilter === 'All statuses' || booking.status === statusFilter
-      const matchesSpecialRequests = !specialRequestsOnly || hasSpecialRequest(booking)
-      return matchesQuery && matchesStatus && matchesSpecialRequests
-    })),
-  })).filter((month) => month.guests.length > 0)
-  const visibleGuestGroups = visibleMonthGroups.flatMap((month) => month.guests)
-  const visibleBookingCount = visibleGuestGroups.reduce((total, group) => total + group.bookings.length, 0)
-  const toggleGuest = (guestKey: string) => {
-    setExpandedGuestKeys((current) => {
-      const next = new Set(current)
-      if (next.has(guestKey)) next.delete(guestKey)
-      else next.add(guestKey)
-      return next
-    })
-  }
-
-    return <>
-    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Bookings</h1><p className="subtitle">Manage reservations, guests, and stay details.</p></div><button className="button button-primary" onClick={onCreateBooking}><CalendarDays size={17} /> New booking</button></div>
-    <section className="card bookings-card">
-      <div className="filter-bar">
-        <div className="search-box"><Search size={17} /><input placeholder="Search by guest, booking ID, or room..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
-        <label className="select-wrap filter-select"><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option>All statuses</option><option>Confirmed</option><option>Pending</option><option>Checked in</option><option>Completed</option><option>Cancelled</option></select><ChevronDown size={14} /></label>
-        {specialRequestsOnly && <button className="filter-button" onClick={() => setSpecialRequestsOnly(false)}>Special requests only <X size={14} /></button>}
-      </div>
-      <div className="table-toolbar"><span><strong>{visibleBookingCount}</strong> bookings · <strong>{visibleGuestGroups.length}</strong> guest accounts</span><button className="icon-button"><Ellipsis size={18} /></button></div>
-      <div className="booking-account-list">
-        {visibleMonthGroups.map((month) => <section className="booking-month-group" key={month.key}>
-          <h2 className="booking-month-heading">{month.label}</h2>
-          <div className="booking-month-guests">{month.guests.map(({ key, guest, bookings: guestBookings }) => {
-            const expanded = expandedGuestKeys.has(key)
-            const checkInDay = String(Number(guestBookings[0].checkIn.slice(8, 10)))
-            return <section className="booking-account-group" key={key}>
-              <button className="booking-account-summary" aria-expanded={expanded} onClick={() => toggleGuest(key)}>
-                <span className={`booking-account-chevron ${expanded ? 'is-expanded' : ''}`}><ChevronDown size={16} /></span>
-                <span className="booking-account-day" aria-label={`Check-in day ${checkInDay}`}>{checkInDay}</span>
-                <span className="booking-account-person"><strong>{guest.guest}</strong><small>{guest.email || guest.phone || guest.guestId}</small></span>
-                <span className="booking-account-count"><strong>{guestBookings.length}</strong><small>{guestBookings.length === 1 ? 'booking' : 'bookings'}</small></span>
-              </button>
-              {expanded && <div className="booking-account-details"><BookingTable bookings={guestBookings} onSelect={onSelect} hideGuest /></div>}
-            </section>
-          })}</div>
-        </section>)}
-        {visibleGuestGroups.length === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>Try adjusting your search or filters.</span></div>}
-      </div>
-    </section>
-  </>
-}
-
-function BookingTable({ bookings, onSelect, compact = false, hideGuest = false }: { bookings: Booking[]; onSelect: (b: Booking) => void; compact?: boolean; hideGuest?: boolean }) {
-  return <div className={`table-scroll ${compact ? 'table-compact' : ''}`}><table><thead><tr>{!hideGuest && <th>Guest</th>}<th>Room</th><th>Stay dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Payment</th><th /></tr></thead><tbody>{bookings.map((booking) => <tr key={booking.id} onClick={() => onSelect(booking)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onSelect(booking)}>{!hideGuest && <td><div className="guest-cell"><div className="avatar" style={{ background: booking.color }}>{booking.initials}</div><div><strong>{booking.guest}</strong><span>{booking.id}</span></div></div></td>}<td>{booking.room}</td><td><div className="booking-stay-dates"><span><small>Check-in</small>{formatDate(booking.checkIn)}</span><span><small>Check-out</small>{formatDate(booking.checkOut)}</span></div></td><td>{booking.guests}</td><td><strong>{formatCurrency(booking.amount)}</strong><span className="table-subtext">{formatCurrency(booking.paid)} paid</span></td><td><StatusBadge kind={statusKind(booking.status)}>{booking.status}</StatusBadge></td><td><StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge></td><td><button className="row-more" aria-label={`Actions for ${booking.guest}`} onClick={(e) => { e.stopPropagation(); onSelect(booking) }}><MoreHorizontal size={17} /></button></td></tr>)}</tbody></table>{bookings.length === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>Try adjusting your search or filters.</span></div>}</div>
-}
-
-function BookingDrawer({ booking, onClose, onStatusChange, onAddPayment, paymentError, paymentSaving }: {
-  booking: Booking
-  onClose: () => void
-  onStatusChange: (status: BookingStatus) => void
-  onAddPayment: (amount: number, method: string) => Promise<boolean>
-  paymentError: string
-  paymentSaving: boolean
-}) {
-  const [paymentAmount, setPaymentAmount] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('cash')
-  const remaining = Math.max(0, booking.amount - booking.paid)
-  const overpayment = Math.max(0, booking.paid - booking.amount)
-  const parsedPayment = Number(paymentAmount)
-  const projectedPayment = booking.paid + parsedPayment
-  const paymentPreview = parsedPayment > 0 && parsedPayment <= remaining
-    ? projectedPayment >= booking.amount ? 'Fully paid' : 'Partially paid'
-    : null
-
-  const submitPayment = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const saved = await onAddPayment(parsedPayment, paymentMethod)
-    if (saved) setPaymentAmount('')
-  }
-
-  return (
-    <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer" onClick={(event) => event.stopPropagation()}>
-        <div className="drawer-header">
-          <div><p className="eyebrow">Booking {booking.id}</p><h2>{booking.guest}</h2></div>
-          <button className="icon-button close-button" onClick={onClose} aria-label="Close booking details"><X size={20} /></button>
-        </div>
-        <div className="drawer-body">
-          <div className="drawer-status-row"><StatusBadge kind={statusKind(booking.status)}>{booking.status}</StatusBadge><span>Booked {formatDate(booking.createdAt)}</span></div>
-          <div className="detail-section">
-            <h3>Stay details</h3>
-            <div className="detail-grid">
-              <div><span>Room</span><strong>{booking.room}</strong></div>
-              <div><span>Guests</span><strong>{booking.guests} guests</strong></div>
-              <div><span>Check-in</span><strong>{formatDate(booking.checkIn)}</strong></div>
-              <div><span>Check-out</span><strong>{formatDate(booking.checkOut)}</strong></div>
-            </div>
-          </div>
-          <div className="detail-section">
-            <h3>Payment summary</h3>
-            <div className="payment-summary">
-              <div><span>Total price</span><strong>{formatCurrency(booking.amount)}</strong></div>
-              <div><span>Paid to date</span><strong className="paid-text">{formatCurrency(booking.paid)}</strong></div>
-              <div><span>Payment status</span><StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge></div>
-              <div className="summary-total"><span>Remaining balance</span><strong>{formatCurrency(remaining)}</strong></div>
-              {overpayment > 0 && <div><span>Overpayment</span><strong className="credit-amount">{formatCurrency(overpayment)}</strong></div>}
-              <div className="progress-bar"><span style={{ width: `${booking.amount > 0 ? Math.min(100, (booking.paid / booking.amount) * 100) : 0}%` }} /></div>
-            </div>
-            <form className="payment-entry" onSubmit={submitPayment}>
-              <h4>Record a payment</h4>
-              <label><span>Amount</span>
-                <div className="payment-input"><input aria-label="Payment amount" type="number" min="0.01" max={remaining} step="0.01" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} required disabled={remaining <= 0 || paymentSaving} /></div>
-              </label>
-              <label><span>Method</span>
-                <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} disabled={paymentSaving}>
-                  <option value="cash">Cash</option>
-                  <option value="bank_transfer">Bank transfer</option>
-                  <option value="gcash">GCash</option>
-                </select>
-              </label>
-              {paymentPreview && <p className="payment-preview">This payment will make the booking <strong>{paymentPreview.toLowerCase()}</strong>.</p>}
-              {paymentError && <p className="payment-error" role="alert">{paymentError}</p>}
-              <button className="button button-primary button-full" type="submit" disabled={remaining <= 0 || booking.status === 'Cancelled' || paymentSaving}>
-                <CircleDollarSign size={16} /> {paymentSaving ? 'Recording payment…' : remaining <= 0 ? 'Fully paid' : 'Add payment'}
-              </button>
-            </form>
-            {booking.payments.length > 0 && <div className="payment-history">
-              <h4>Payment history</h4>
-              {booking.payments.map((payment, index) => <div className="payment-history-row" key={`${payment.paidAt ?? 'payment'}-${index}`}>
-                <span>{payment.type} · {payment.method}{payment.paidAt ? ` · ${new Date(payment.paidAt).toLocaleDateString('en-PH')}` : ''}</span>
-                <strong>{formatCurrency(payment.amount)}</strong>
-              </div>)}
-            </div>}
-          </div>
-          <div className="detail-section">
-            <h3>Guest information</h3>
-            <div className="guest-detail"><div className="avatar" style={{ background: booking.color }}>{booking.initials}</div><div><strong>{booking.guest}</strong><span>{booking.email}</span><span>{booking.phone}</span></div></div>
-          </div>
-          <div className="detail-section"><h3>Special requests</h3><p className="request-box">{booking.request}</p></div>
-        </div>
-        <div className="drawer-footer">
-          <span>Update status</span>
-          <label className="select-wrap"><select value={booking.status} onChange={(event) => onStatusChange(event.target.value as BookingStatus)}><option>Pending</option><option>Confirmed</option><option>Checked in</option><option>Completed</option><option>Cancelled</option></select><ChevronDown size={14} /></label>
-          <button className="button button-primary button-full" onClick={onClose}><Check size={16} /> Save changes</button>
-        </div>
-      </aside>
-    </div>
-  )
-}
-
-function GuestsPage({ guests, bookings, query, setQuery, onChangeRoom, onDeleteGuest, deleteSavingId, deleteError }: {
-  guests: Guest[]
-  bookings: Booking[]
-  query: string
-  setQuery: (value: string) => void
-  onChangeRoom: (guest: Guest) => void
-  onDeleteGuest: (guest: Guest) => Promise<boolean>
-  deleteSavingId: string | null
-  deleteError: string
-}) {
-  const [guestToDelete, setGuestToDelete] = useState<Guest | null>(null)
-  const filteredGuests = guests.filter((guest) => `${guest.full_name} ${guest.email ?? ''} ${guest.phone ?? ''}`.toLowerCase().includes(query.toLowerCase()))
-
-  const today = toDateKey(new Date())
-  const guestBookings = guestToDelete ? bookings.filter((booking) => booking.guestId === guestToDelete.id) : []
-  const guestPaymentCount = guestBookings.reduce((count, booking) => count + booking.payments.length, 0)
-  const confirmDelete = async () => {
-    if (guestToDelete && await onDeleteGuest(guestToDelete)) setGuestToDelete(null)
-  }
-
-  return <>
-    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Guests</h1><p className="subtitle">Review customer details and stay history.</p></div></div>
-    <section className="card bookings-card">
-      <div className="filter-bar"><div className="search-box"><Search size={17} /><input placeholder="Search guests or email..." value={query} onChange={(e) => setQuery(e.target.value)} /></div></div>
-      <div className="table-toolbar"><span><strong>{filteredGuests.length}</strong> guests</span></div>
-      <div className="table-scroll"><table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Joined</th><th>Actions</th></tr></thead><tbody>{filteredGuests.map((guest) => {
-        const hasActiveBooking = bookings.some((booking) => booking.guestId === guest.id && booking.status !== 'Cancelled' && booking.status !== 'Completed' && booking.checkOut > today)
-        const deleting = deleteSavingId === guest.id
-        return <tr key={guest.id}>
-          <td><div className="guest-cell"><div className="avatar" style={{ background: '#e5d0b9' }}>{guest.full_name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}</div><div><strong>{guest.full_name}</strong><span>{guest.id}</span></div></div></td>
-          <td>{guest.email ?? '—'}</td>
-          <td>{guest.phone ?? '—'}</td>
-          <td>{new Date(guest.created_at).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-          <td><div className="guest-room-actions">
-            {hasActiveBooking && <button className="button button-secondary guest-assign-button" onClick={() => onChangeRoom(guest)}><DoorOpen size={14} /> Change room</button>}
-            <button className="button button-secondary guest-delete-button" onClick={() => setGuestToDelete(guest)} disabled={Boolean(deleteSavingId)} aria-label={`Delete ${guest.full_name}`}><Trash2 size={14} /> Delete guest</button>
-            {deleting && <span className="guest-delete-progress">Deleting…</span>}
-          </div></td>
-        </tr>
-      })}</tbody></table>
-      {filteredGuests.length === 0 && <div className="empty-state"><Users size={25} /><strong>No guests found</strong><span>Try adjusting your search or add a guest record.</span></div>}
-      </div>
-    </section>
-    {guestToDelete && <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleteSavingId) setGuestToDelete(null) }}>
-      <section className="assignment-dialog card guest-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-guest-title" aria-describedby="delete-guest-consequence">
-        <header className="assignment-header">
-          <div><p className="eyebrow">Permanent deletion</p><h2 id="delete-guest-title">Delete {guestToDelete.full_name}?</h2></div>
-          <button className="icon-button" onClick={() => setGuestToDelete(null)} aria-label="Close delete guest confirmation" disabled={Boolean(deleteSavingId)}><X size={19} /></button>
-        </header>
-        <div className="assignment-form">
-          <p id="delete-guest-consequence" className="guest-delete-consequence">This permanently deletes the guest and their {guestBookings.length} booking(s), {guestPaymentCount} payment transaction(s), and associated room-change credit history. Any room dates held by those bookings will become available.</p>
-          {deleteError && <p className="payment-error" role="alert">{deleteError}</p>}
-          <footer className="assignment-actions">
-            <button className="button button-secondary" onClick={() => setGuestToDelete(null)} disabled={Boolean(deleteSavingId)}>Keep guest</button>
-            <button className="button button-danger" onClick={confirmDelete} disabled={Boolean(deleteSavingId)}>{deleteSavingId === guestToDelete.id ? 'Deleting records…' : 'Delete guest and history'}</button>
-          </footer>
-        </div>
-      </section>
-    </div>}
-  </>
-}
-
-function GuestAssignmentDialog({ guest, rooms, bookings, error, saving, onClose, onAssign }: {
-  guest: Guest
-  rooms: Room[]
-  bookings: Booking[]
-  error: string
-  saving: boolean
-  onClose: () => void
-  onAssign: (assignment: GuestAssignment) => Promise<boolean>
-}) {
-  const today = toDateKey(new Date())
-  const tomorrow = toDateKey(new Date(Date.now() + 86_400_000))
-  const [checkIn, setCheckIn] = useState(today)
-  const [checkOut, setCheckOut] = useState(tomorrow)
-  const [roomId, setRoomId] = useState('')
-  const [guestCount, setGuestCount] = useState('1')
-  const availableRooms = rooms.filter((room) => {
-    if (!room.isActive) return false
-    const conflicts = bookings.some((booking) =>
-      booking.roomId === Number(room.id) &&
-      booking.status !== 'Cancelled' &&
-      booking.status !== 'Completed' &&
-      booking.checkIn < checkOut &&
-      booking.checkOut > checkIn,
-    )
-    const includesToday = checkIn <= today && checkOut > today
-    return !conflicts && !(includesToday && room.status === 'occupied')
-  })
-
-  useEffect(() => {
-    setRoomId((currentRoomId) =>
-      availableRooms.some((room) => room.id === currentRoomId)
-        ? currentRoomId
-        : availableRooms[0]?.id ?? '',
-    )
-  }, [availableRooms])
-
-  const selectedRoom = availableRooms.find((room) => room.id === roomId)
-  const nights = Math.max(0, Math.round((new Date(`${checkOut}T00:00:00`).getTime() - new Date(`${checkIn}T00:00:00`).getTime()) / 86_400_000))
-  const totalPrice = (selectedRoom?.rate ?? 0) * nights
-  const submitAssignment = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedRoom) return
-    await onAssign({ roomId: Number(roomId), checkIn, checkOut, guestCount: Number(guestCount) })
-  }
-
-  return <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
-    <section className="assignment-dialog card" role="dialog" aria-modal="true" aria-labelledby="assignment-title">
-      <header className="assignment-header">
-        <div><p className="eyebrow">Guest room assignment</p><h2 id="assignment-title">{guest.full_name}</h2><p className="subtitle">Create a booking for this guest.</p></div>
-        <button className="icon-button" onClick={onClose} aria-label="Close assignment" disabled={saving}><X size={19} /></button>
-      </header>
-      <form className="assignment-form" onSubmit={submitAssignment}>
-        <label>Room
-          <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving || availableRooms.length === 0}>
-            {availableRooms.length === 0 ? <option value="">No rooms available for these dates</option> : availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
-          </select>
-        </label>
-        <div className="assignment-date-row">
-          <label>Check-in<input type="date" value={checkIn} min={today} onChange={(event) => setCheckIn(event.target.value)} required disabled={saving} /></label>
-          <label>Check-out<input type="date" value={checkOut} min={checkIn || today} onChange={(event) => setCheckOut(event.target.value)} required disabled={saving} /></label>
-        </div>
-        <label>Number of guests
-          <input type="number" min="1" max={selectedRoom?.capacity ?? undefined} value={guestCount} onChange={(event) => setGuestCount(event.target.value)} required disabled={saving || !selectedRoom} />
-        </label>
-        <p className="room-change-note">Room rate is per room per night. Guest count affects capacity only, not the room price.</p>
-        <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Estimated total` : 'Estimated total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
-        {!selectedRoom && <p className="payment-error" role="status">No active room is available for the selected stay dates.</p>}
-        {error && <p className="payment-error" role="alert">{error}</p>}
-        <footer className="assignment-actions">
-          <button className="button button-secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="button button-primary" type="submit" disabled={saving || !selectedRoom || nights < 1 || Number(guestCount) > (selectedRoom?.capacity ?? 0)}>{saving ? 'Creating booking…' : 'Assign room'}</button>
-        </footer>
-      </form>
-    </section>
-  </div>
-}
-
-function NewBookingDialog({ rooms, guests, bookings, error, saving, onClose, onCreate }: {
-  rooms: Room[]
-  guests: Guest[]
-  bookings: Booking[]
-  error: string
-  saving: boolean
-  onClose: () => void
-  onCreate: (values: NewBookingValues) => Promise<void>
-}) {
-  const today = toDateKey(new Date())
-  const tomorrow = toDateKey(new Date(Date.now() + 86_400_000))
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [checkIn, setCheckIn] = useState(today)
-  const [checkOut, setCheckOut] = useState(tomorrow)
-  const [roomId, setRoomId] = useState('')
-  const [guestCount, setGuestCount] = useState('1')
-  const [specialRequests, setSpecialRequests] = useState('')
-  const [status, setStatus] = useState<'pending' | 'confirmed'>('confirmed')
-  const normalizedEmail = email.trim().toLowerCase()
-  const normalizedPhone = phone.replace(/\D/g, '')
-  const matchingGuest = guests.find((guest) =>
-    normalizedEmail && guest.email?.trim().toLowerCase() === normalizedEmail,
-  ) ?? (normalizedPhone
-    ? guests.find((guest) => guest.phone?.replace(/\D/g, '') === normalizedPhone)
-    : undefined)
-  const availableRooms = rooms.filter((room) => {
-    if (!room.isActive || room.isUnderMaintenance) return false
-    const conflict = bookings.some((booking) =>
-      booking.roomId === Number(room.id) &&
-      booking.status !== 'Cancelled' &&
-      booking.status !== 'Completed' &&
-      booking.checkIn < checkOut &&
-      booking.checkOut > checkIn,
-    )
-    const includesToday = checkIn <= today && checkOut > today
-    return !conflict && !(includesToday && room.status === 'occupied')
-  })
-
-  useEffect(() => {
-    setRoomId((currentRoomId) =>
-      availableRooms.some((room) => room.id === currentRoomId)
-        ? currentRoomId
-        : availableRooms[0]?.id ?? '',
-    )
-  }, [availableRooms])
-
-  const selectedRoom = availableRooms.find((room) => room.id === roomId)
-  const nights = Math.max(0, Math.round((new Date(`${checkOut}T00:00:00`).getTime() - new Date(`${checkIn}T00:00:00`).getTime()) / 86_400_000))
-  const totalPrice = (selectedRoom?.rate ?? 0) * nights
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!selectedRoom) return
-    void onCreate({
-      fullName,
-      email,
-      phone,
-      roomId: Number(roomId),
-      checkIn,
-      checkOut,
-      guestCount: Number(guestCount),
-      specialRequests,
-      status,
-    })
-  }
-
-  return <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
-    <section className="assignment-dialog card" role="dialog" aria-modal="true" aria-labelledby="new-booking-title">
-      <header className="assignment-header">
-        <div><p className="eyebrow">Hometel reservation</p><h2 id="new-booking-title">Create a booking</h2><p className="subtitle">Add guest details and reserve an available room.</p></div>
-        <button className="icon-button" onClick={onClose} aria-label="Close new booking" disabled={saving}><X size={19} /></button>
-      </header>
-      <form className="assignment-form" onSubmit={submit}>
-        <label>Guest name
-          <input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" required disabled={saving} />
-        </label>
-        <div className="assignment-date-row">
-          <label>Email
-            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" disabled={saving} />
-          </label>
-          <label>Phone
-            <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" disabled={saving} />
-          </label>
-        </div>
-        {matchingGuest && <p className="room-change-note">Existing guest record will be used: <strong>{matchingGuest.full_name}</strong>.</p>}
-        <label>Room
-          <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving || availableRooms.length === 0}>
-            {availableRooms.length === 0 ? <option value="">No rooms available for these dates</option> : availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
-          </select>
-        </label>
-        <div className="assignment-date-row">
-          <label>Check-in
-            <input type="date" value={checkIn} min={today} onChange={(event) => setCheckIn(event.target.value)} required disabled={saving} />
-          </label>
-          <label>Check-out
-            <input type="date" value={checkOut} min={checkIn || today} onChange={(event) => setCheckOut(event.target.value)} required disabled={saving} />
-          </label>
-        </div>
-        <div className="assignment-date-row">
-          <label>Number of guests
-            <input type="number" min="1" max={selectedRoom?.capacity ?? undefined} value={guestCount} onChange={(event) => setGuestCount(event.target.value)} required disabled={saving || !selectedRoom} />
-          </label>
-          <label>Booking status
-            <select value={status} onChange={(event) => {
-              const nextStatus = event.target.value
-              if (nextStatus === 'pending' || nextStatus === 'confirmed') setStatus(nextStatus)
-            }} disabled={saving}>
-              <option value="confirmed">Confirmed</option>
-              <option value="pending">Pending</option>
-            </select>
-          </label>
-        </div>
-        <label><span className="assignment-label-title">Special requests <span>(optional)</span></span>
-          <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} disabled={saving} />
-        </label>
-        <div className="assignment-total"><span>Booking total</span><strong>{formatCurrency(totalPrice)}</strong></div>
-        {!selectedRoom && <p className="payment-error" role="status">No active room is available for the selected stay dates.</p>}
-        {error && <p className="payment-error" role="alert">{error}</p>}
-        <footer className="assignment-actions">
-          <button className="button button-secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="button button-primary" type="submit" disabled={saving || !selectedRoom || nights < 1 || Number(guestCount) > (selectedRoom?.capacity ?? 0)}>{saving ? 'Creating booking…' : 'Create booking'}</button>
-        </footer>
-      </form>
-    </section>
-  </div>
-}
-
-function RoomChangeDialog({ guest, rooms, bookings, setupError, error, saving, onClose, onChangeRoom }: {
-  guest: Guest
-  rooms: Room[]
-  bookings: Booking[]
-  setupError: string
-  error: string
-  saving: boolean
-  onClose: () => void
-  onChangeRoom: (booking: Booking, roomId: number, note: string) => Promise<boolean>
-}) {
-  const today = toDateKey(new Date())
-  const [bookingId, setBookingId] = useState(bookings[0]?.id ?? '')
-  const [roomId, setRoomId] = useState('')
-  const [note, setNote] = useState('')
-  const booking = bookings.find((item) => item.id === bookingId) ?? bookings[0]
-  const availableRooms = rooms.filter((room) => {
-    if (!room.isActive || !booking || room.id === String(booking.roomId) || booking.guests > room.capacity) return false
-    const conflicts = bookings.some((item) =>
-      item.id !== booking.id &&
-      item.roomId === Number(room.id) &&
-      item.checkIn < booking.checkOut &&
-      item.checkOut > booking.checkIn,
-    )
-    const includesToday = booking.checkIn <= today && booking.checkOut > today
-    return !conflicts && !(includesToday && room.status === 'occupied')
-  })
-
-  useEffect(() => {
-    setRoomId((currentRoomId) => availableRooms.some((room) => room.id === currentRoomId) ? currentRoomId : '')
-  }, [availableRooms])
-
-  const selectedRoom = availableRooms.find((room) => room.id === roomId)
-  const nights = booking
-    ? Math.max(0, Math.round((new Date(`${booking.checkOut}T00:00:00`).getTime() - new Date(`${booking.checkIn}T00:00:00`).getTime()) / 86_400_000))
-    : 0
-  const newTotal = (selectedRoom?.rate ?? 0) * nights
-  const displayedTotal = booking ? selectedRoom ? newTotal : booking.amount : 0
-  const displayedBalance = booking ? Math.max(0, displayedTotal - booking.paid) : 0
-  const displayedOverpayment = booking ? Math.max(0, booking.paid - displayedTotal) : 0
-  const displayedPaymentStatus: PaymentStatus = booking && booking.paid > displayedTotal
-    ? 'Overpaid'
-    : booking && displayedTotal > 0 && booking.paid >= displayedTotal
-      ? 'Paid'
-    : booking && booking.paid > 0
-      ? 'Partial'
-      : 'Unpaid'
-  const submitChange = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (booking && selectedRoom) {
-      const saved = await onChangeRoom(booking, Number(selectedRoom.id), note)
-      if (saved) setNote('')
-    }
-  }
-
-  return <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
-    <section className="assignment-dialog card" role="dialog" aria-modal="true" aria-labelledby="room-change-title">
-      <header className="assignment-header">
-        <div><p className="eyebrow">Guest room change</p><h2 id="room-change-title">{guest.full_name}</h2><p className="subtitle">Move an active or upcoming booking to another available room.</p></div>
-        <button className="icon-button" onClick={onClose} aria-label="Close room change" disabled={saving}><X size={19} /></button>
-      </header>
-      <form className="assignment-form" onSubmit={submitChange}>
-        <label>Booking
-          <select value={booking?.id ?? ''} onChange={(event) => { setBookingId(event.target.value); setRoomId('') }} disabled={saving || bookings.length === 0}>
-            {bookings.map((item) => <option key={item.id} value={item.id}>{item.room} · {formatDate(item.checkIn)} – {formatDate(item.checkOut)}</option>)}
-          </select>
-        </label>
-        {booking && <>
-          <div className="room-change-current"><span>Current room</span><strong>{booking.room}</strong><span>{booking.guests} guest{booking.guests === 1 ? '' : 's'} · {nights} night{nights === 1 ? '' : 's'}</span></div>
-          <label>New room
-            <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving || availableRooms.length === 0}>
-              <option value="">{availableRooms.length === 0 ? 'No other room available for these dates' : 'Select an available room'}</option>
-              {availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
-            </select>
-          </label>
-          <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Updated total` : 'Current booking total'}</span><strong>{formatCurrency(displayedTotal)}</strong></div>
-          <div className="room-change-payment">
-            <div><span>Previously paid</span><strong>{formatCurrency(booking.paid)}</strong></div>
-            <div><span>Remaining balance</span><strong>{formatCurrency(displayedBalance)}</strong></div>
-            {displayedOverpayment > 0 && <div><span>Overpayment</span><strong className="credit-amount">{formatCurrency(displayedOverpayment)}</strong></div>}
-            <div><span>Payment status</span><StatusBadge kind={statusKind(displayedPaymentStatus)}>{displayedPaymentStatus}</StatusBadge></div>
-          </div>
-          <p className="room-change-note">Room rate is per room per night; guest count does not change the price. Existing payments remain attached to this booking.</p>
-          {selectedRoom && booking.paid > newTotal && <div className="room-change-credit-preview"><span>Credit to return</span><strong>{formatCurrency(booking.paid - newTotal)}</strong></div>}
-          <label>Room-change note (optional)
-            <textarea rows={2} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a reason or details for this room change." disabled={saving} />
-          </label>
-        </>}
-        {setupError && <p className="payment-error" role="alert">{setupError}</p>}
-        {bookings.length === 0 && <p className="payment-error" role="status">This guest has no active or upcoming booking to change.</p>}
-        {bookings.length > 0 && availableRooms.length === 0 && <p className="payment-error" role="status">No other active room is available for this booking’s dates and guest count.</p>}
-        {error && <p className="payment-error" role="alert">{error}</p>}
-        <footer className="assignment-actions">
-          <button className="button button-secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="button button-primary" type="submit" disabled={saving || Boolean(setupError) || !booking || !selectedRoom}>{saving ? 'Changing room…' : 'Confirm room change'}</button>
-        </footer>
-      </form>
-    </section>
-  </div>
-}
-
-function PaymentsPage({ bookings, roomChanges, query, setQuery, statusFilter, setStatusFilter, onMarkCreditReturned, onReturnOverpayment, onInvoiceSent, creditReturnSavingId, creditStatusError }: {
-  bookings: Booking[]
-  roomChanges: RoomChangeRecord[]
-  query: string
-  setQuery: (value: string) => void
-  statusFilter: string
-  setStatusFilter: (value: string) => void
-  onMarkCreditReturned: (changeId: string) => Promise<boolean>
-  onReturnOverpayment: (booking: Booking) => Promise<boolean>
-  onInvoiceSent: (bookingIds: string[], sentAt: string) => void
-  creditReturnSavingId: string | null
-  creditStatusError: string
-}) {
-  const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null)
-  const [overpaymentGuestId, setOverpaymentGuestId] = useState<string | null>(null)
-  const [invoiceSendingId, setInvoiceSendingId] = useState<string | null>(null)
-  const [invoiceFeedback, setInvoiceFeedback] = useState<{ bookingId: string; message: string; isError: boolean } | null>(null)
-  const methodLabel = (method: string) => method.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase())
-  const typeLabel = (type: string) => type.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase())
-  const sendInvoice = async (selectedBookings: Booking[], guestKey: string) => {
-    const bookingIds = selectedBookings.map((booking) => booking.id)
-    setInvoiceSendingId(guestKey)
-    setInvoiceFeedback(null)
-    try {
-      const { data, error } = await supabase.functions.invoke('send-booking-invoice', {
-        body: { bookingIds },
-      })
-
-      if (error) {
-        console.error('Unable to send booking invoice:', error)
-        setInvoiceFeedback({ bookingId: guestKey, message: 'Invoice could not be sent. Check the email function and Resend configuration.', isError: true })
-        return
-      }
-
-      if (typeof data?.trackingError === 'string') {
-        console.error('Invoice email was sent, but sent status could not be recorded:', data.trackingError)
-        setInvoiceFeedback({ bookingId: guestKey, message: 'Email sent successfully, but its sent status could not be saved. Please check the invoice_sent_at migration and refresh.', isError: true })
-        return
-      }
-      if (typeof data?.sentAt !== 'string') {
-        console.error('Invoice function returned success without a sent timestamp:', data)
-        setInvoiceFeedback({ bookingId: guestKey, message: 'Email sent, but the function did not confirm invoice tracking. Refresh and verify before retrying.', isError: true })
-        return
-      }
-      onInvoiceSent(bookingIds, data.sentAt)
-      setInvoiceFeedback({ bookingId: guestKey, message: `Invoice${selectedBookings.length === 1 ? '' : 's'} covering ${selectedBookings.length} booking${selectedBookings.length === 1 ? '' : 's'} sent to ${selectedBookings[0].email}.`, isError: false })
-    } catch (error) {
-      console.error('Unable to send booking invoice:', error)
-      setInvoiceFeedback({ bookingId: guestKey, message: 'Invoice could not be sent. Check your connection and try again.', isError: true })
-    } finally {
-      setInvoiceSendingId(null)
-    }
-  }
-  const payments: PaymentTransaction[] = [
-    ...bookings.flatMap((booking) => booking.payments.map((payment, index) => ({
-      ...payment,
-      booking,
-      id: `${booking.id}-${payment.paidAt ?? 'payment'}-${index}`,
-      occurredAt: payment.paidAt,
-      transaction: typeLabel(payment.type),
-      transactionStatus: booking.payment,
-      displayAmount: payment.status.toLowerCase() === 'paid' ? payment.amount : 0,
-      isCreditReturn: false,
-      isStatusOnly: false,
-    }))),
-    ...bookings
-      .filter((booking) => booking.payments.length === 0)
-      .map((booking) => ({
-        booking,
-        id: `${booking.id}-no-payment`,
-        amount: 0,
-        displayAmount: 0,
-        paidAt: null,
-        occurredAt: null,
-        method: '—',
-        type: 'booking_status',
-        transaction: 'No payment recorded',
-        transactionStatus: booking.payment,
-        isCreditReturn: false,
-        isStatusOnly: true,
-      })),
-    ...roomChanges
-      .filter((change) => change.credit_amount > 0)
-      .flatMap((change) => {
-        const booking = bookings.find((item) => item.id === change.booking_id)
-        return booking ? [{
-          booking,
-          id: change.id,
-          amount: change.credit_amount,
-          displayAmount: change.credit_returned ? -change.credit_amount : 0,
-          paidAt: change.credit_returned_at,
-          occurredAt: change.credit_returned_at ?? change.created_at,
-          method: '—',
-          type: 'credit_return',
-          status: change.credit_returned ? 'returned' : 'due',
-          transaction: change.credit_returned ? 'Refund returned' : 'Refund due',
-          transactionStatus: change.credit_returned ? 'Returned' : 'Refund due',
-          isCreditReturn: true,
-          isStatusOnly: false,
-        }] : []
-      }),
-  ]
-  const filteredPayments = payments.filter((payment) => {
-    const matchesQuery = `${payment.booking.guest} ${payment.booking.id} ${payment.booking.room} ${payment.method} ${payment.type}`
-      .toLowerCase()
-      .includes(query.toLowerCase())
-    return matchesQuery
-  })
-  const guestGroups = Array.from(filteredPayments.reduce((groups, payment) => {
-    const email = payment.booking.email.trim().toLowerCase()
-    const phone = payment.booking.phone.replace(/\D/g, '')
-    const personKey = email
-      ? `email:${email}`
-      : phone
-        ? `phone:${phone}`
-        : `guest:${payment.booking.guestId}`
-    const current = groups.get(personKey) ?? { key: personKey, guest: payment.booking, transactions: [] as PaymentTransaction[] }
-    current.transactions.push(payment)
-    groups.set(personKey, current)
-    return groups
-  }, new Map<string, { key: string; guest: Booking; transactions: PaymentTransaction[] }>()).values())
-  guestGroups.forEach((group) => group.transactions.sort((left, right) => {
-    const leftTime = left.occurredAt ? new Date(left.occurredAt).getTime() : 0
-    const rightTime = right.occurredAt ? new Date(right.occurredAt).getTime() : 0
-    return leftTime - rightTime
-  }))
-  const getGuestPaymentStatus = (transactions: PaymentTransaction[]): PaymentStatus | 'Returned' | 'Refund due' | 'Mixed' => {
-    const bookingStatuses = new Set(transactions.map((transaction) => transaction.booking.payment))
-    if (bookingStatuses.size > 1) return 'Mixed'
-    if (transactions.every((transaction) => transaction.isCreditReturn)) {
-      return transactions.every((transaction) => transaction.transactionStatus === 'Returned') ? 'Returned' : 'Refund due'
-    }
-    return bookingStatuses.values().next().value ?? 'Unpaid'
-  }
-  const visibleGuestGroups = guestGroups.filter(({ transactions }) => {
-    const guestStatus = getGuestPaymentStatus(transactions)
-    return statusFilter === 'All statuses' ||
-      guestStatus === statusFilter ||
-      (statusFilter === 'Refund due' && transactions.some((transaction) => transaction.transactionStatus === 'Refund due')) ||
-      (statusFilter === 'Returned' && transactions.some((transaction) => transaction.transactionStatus === 'Returned'))
-  })
-  const selectedGuest = guestGroups.find((group) => group.key === selectedGuestId)
-  const selectedBookingGroups = selectedGuest
-    ? Array.from(selectedGuest.transactions.reduce((groups, transaction) => {
-      const bookingId = transaction.booking.id
-      const group = groups.get(bookingId) ?? { booking: transaction.booking, transactions: [] }
-      group.transactions.push(transaction)
-      groups.set(bookingId, group)
-      return groups
-    }, new Map<string, { booking: Booking; transactions: PaymentTransaction[] }>()).values())
-      .sort((left, right) => right.booking.createdAt.localeCompare(left.booking.createdAt))
-    : []
-  const overpaymentGuest = guestGroups.find((group) => group.key === overpaymentGuestId)
-  const overpaymentBookings = overpaymentGuest
-    ? Array.from(new Map(overpaymentGuest.transactions
-      .filter((transaction) => !transaction.isCreditReturn && transaction.booking.payment === 'Overpaid')
-      .map((transaction) => [transaction.booking.id, transaction.booking])).values())
-    : []
-  const formatTransactionDateTime = (value: string | null) => {
-    if (!value) return 'Date unavailable'
-    const date = new Date(value)
-    return Number.isNaN(date.getTime())
-      ? 'Date unavailable'
-      : date.toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-  }
-  const submitOverpaymentReturn = async (booking: Booking) => {
-    const returned = await onReturnOverpayment(booking)
-    if (returned) setOverpaymentGuestId(null)
-  }
-  const visibleTransactions = visibleGuestGroups.flatMap((group) => group.transactions)
-  const netReceived = visibleTransactions.reduce((sum, payment) => sum + payment.displayAmount, 0)
-
-  return <>
-    <div className="page-heading">
-      <div><p className="eyebrow">Hometel</p><h1>Payments</h1><p className="subtitle">Review payment transactions recorded against bookings.</p></div>
-    </div>
-    <section className="card bookings-card">
-      <div className="filter-bar">
-        <div className="search-box"><Search size={17} /><input placeholder="Search guest, booking, method..." value={query} onChange={(event) => setQuery(event.target.value)} /></div>
-        <label className="select-wrap filter-select"><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option>All statuses</option><option>Paid</option><option>Partial</option><option>Unpaid</option><option>Overpaid</option><option>Refund due</option><option>Returned</option><option>Mixed</option></select><ChevronDown size={14} /></label>
-      </div>
-      <div className="table-toolbar"><span><strong>{visibleGuestGroups.length}</strong> guests · {visibleTransactions.filter((payment) => !payment.isStatusOnly).length} transactions</span><span>{formatCurrency(netReceived)} net received</span></div>
-      {creditStatusError && <p className="payment-error" role="alert">{creditStatusError}</p>}
-      <div className="table-scroll">
-        <table><thead><tr><th>Guest</th><th>Bookings</th><th>Transactions</th><th>Net received</th><th>Payment status</th><th>Invoice</th><th /></tr></thead>
-          <tbody>{visibleGuestGroups.map(({ key, guest, transactions }) => {
-            const bookingsById = new Map(transactions.map((transaction) => [transaction.booking.id, transaction.booking]))
-            const bookingRecords = Array.from(bookingsById.values())
-            const bookingIds = new Set(bookingRecords.map((booking) => booking.id))
-            const guestNet = transactions.reduce((sum, transaction) => sum + transaction.displayAmount, 0)
-            const paymentStatus = getGuestPaymentStatus(transactions)
-            const lastInvoiceSentAt = bookingRecords
-              .map((booking) => booking.invoiceSentAt)
-              .filter((sentAt): sentAt is string => Boolean(sentAt))
-              .sort((left, right) => right.localeCompare(left))[0]
-            const bookingStatusCounts = bookingRecords.reduce((counts, booking) => {
-              counts.set(booking.payment, (counts.get(booking.payment) ?? 0) + 1)
-              return counts
-            }, new Map<PaymentStatus, number>())
-            return <tr key={key}>
-              <td><div className="guest-cell"><div className="avatar" style={{ background: guest.color }}>{guest.initials}</div><div><strong>{guest.guest}</strong><span>{guest.email || guest.phone || guest.guestId}</span></div></div></td>
-              <td>{bookingIds.size}</td><td>{transactions.filter((transaction) => !transaction.isStatusOnly).length}</td>
-              <td><strong className={guestNet < 0 ? 'credit-amount' : undefined}>{formatCurrency(guestNet)}</strong></td>
-              <td><StatusBadge kind={paymentStatus === 'Returned' ? 'warning' : statusKind(paymentStatus)}>{paymentStatus}</StatusBadge>
-                {paymentStatus === 'Mixed' && <span className="payment-status-summary">{Array.from(bookingStatusCounts, ([status, count]) => `${count} ${status.toLowerCase()}`).join(' · ')}</span>}
-              </td>
-              <td>{lastInvoiceSentAt ? <StatusBadge kind="success">Sent {formatDate(lastInvoiceSentAt)}</StatusBadge> : <StatusBadge kind="neutral">Not sent</StatusBadge>}</td>
-              <td><div className="payment-row-actions">
-                <button className="button button-secondary payment-view-button" onClick={() => setSelectedGuestId(key)}>View transactions</button>
-                {transactions.filter((transaction) => transaction.isCreditReturn && transaction.transactionStatus === 'Refund due').map((transaction) => <button className="button button-secondary payment-view-button refund-due-action" key={transaction.id} disabled={Boolean(creditReturnSavingId)} title={`Mark ${formatCurrency(transaction.amount)} refund returned for ${transaction.booking.room}`} onClick={() => onMarkCreditReturned(transaction.id)}>{creditReturnSavingId === transaction.id ? 'Updating…' : `Mark ${formatCurrency(transaction.amount)} refunded`}</button>)}
-                {transactions.some((transaction) => !transaction.isCreditReturn && transaction.booking.payment === 'Overpaid') && <button className="button button-secondary payment-view-button" onClick={() => setOverpaymentGuestId(key)}>Return overpayment</button>}
-              </div></td>
-            </tr>
-          })}</tbody>
-        </table>
-        {visibleGuestGroups.length === 0 && <div className="empty-state"><CircleDollarSign size={25} /><strong>{bookings.length === 0 ? 'No bookings found' : 'No payments match these filters'}</strong><span>{bookings.length === 0 ? 'Bookings and their payment records will appear here.' : 'Try another search or status filter.'}</span></div>}
-      </div>
-    </section>
-    {selectedGuest && <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedGuestId(null) }}>
-      <section className="payment-transactions-dialog card" role="dialog" aria-modal="true" aria-labelledby="guest-transactions-title">
-        <header className="assignment-header">
-          <div><p className="eyebrow">Guest transactions</p><h2 id="guest-transactions-title">{selectedGuest.guest.guest}</h2><p className="subtitle">{selectedBookingGroups.length} booking(s) · {selectedGuest.transactions.filter((transaction) => !transaction.isStatusOnly).length} transactions</p></div>
-          <button className="icon-button" onClick={() => setSelectedGuestId(null)} aria-label="Close transactions"><X size={19} /></button>
-        </header>
-        <div className="payment-transactions-list">
-          {selectedBookingGroups.map(({ booking, transactions }) => <section className="payment-booking-group" key={booking.id}>
-            <header className="payment-booking-group-header">
-              <div><strong>{booking.room}</strong><span>{booking.dates} · Booking {booking.id}</span></div>
-              <StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge>
-              <div className="payment-booking-totals"><span>{formatCurrency(booking.paid)} paid</span><strong>of {formatCurrency(booking.amount)}</strong></div>
-            </header>
-            <div className="payment-booking-transactions">
-              {transactions.map((transaction) => <article className="payment-transaction-item" key={transaction.id}>
-                <div className="payment-transaction-heading"><div><strong>{transaction.transaction}</strong></div>{!transaction.isStatusOnly && <strong className={transaction.isCreditReturn ? 'credit-amount' : undefined}>{transaction.isCreditReturn ? '−' : ''}{formatCurrency(transaction.amount)}</strong>}</div>
-                <div className="payment-transaction-meta"><span>{transaction.isStatusOnly ? 'No transaction available' : transaction.isCreditReturn ? transaction.transaction : methodLabel(transaction.method)}</span><span>{transaction.isCreditReturn && transaction.transactionStatus === 'Refund due' ? 'Not returned yet' : formatTransactionDateTime(transaction.occurredAt)}</span><StatusBadge kind={transaction.isCreditReturn ? 'warning' : statusKind(transaction.booking.payment)}>{transaction.transactionStatus}</StatusBadge></div>
-              </article>)}
-            </div>
-          </section>)}
-        </div>
-        <footer className="assignment-actions payment-invoice-footer">
-          <button className="button button-primary" onClick={() => void sendInvoice(selectedBookingGroups.map(({ booking }) => booking), selectedGuest.key)} disabled={!selectedGuest.guest.email.trim() || Boolean(invoiceSendingId)}>
-            <Mail size={15} />{invoiceSendingId === selectedGuest.key ? 'Sending…' : 'Email invoice'}
-          </button>
-        </footer>
-        {selectedBookingGroups.some(({ booking }) => !booking.email.trim()) && <p className="payment-error" role="status">Invoices are disabled for bookings without a guest email on file.</p>}
-        {invoiceFeedback?.bookingId === selectedGuest.key && <p className={invoiceFeedback.isError ? 'payment-error' : 'payment-success'} role={invoiceFeedback.isError ? 'alert' : 'status'}>{invoiceFeedback.message}</p>}
-      </section>
-    </div>}
-    {overpaymentGuest && <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !creditReturnSavingId) setOverpaymentGuestId(null) }}>
-      <section className="payment-transactions-dialog card" role="dialog" aria-modal="true" aria-labelledby="return-overpayment-title">
-        <header className="assignment-header">
-          <div><p className="eyebrow">Overpayment return</p><h2 id="return-overpayment-title">{overpaymentGuest.guest.guest}</h2><p className="subtitle">Confirm the excess amount to return for the selected booking.</p></div>
-          <button className="icon-button" onClick={() => setOverpaymentGuestId(null)} aria-label="Close overpayment return" disabled={Boolean(creditReturnSavingId)}><X size={19} /></button>
-        </header>
-        <div className="payment-transactions-list">
-          {overpaymentBookings.map((booking) => <article className="payment-transaction-item" key={booking.id}>
-            <div className="payment-transaction-heading"><div><strong>{booking.room}</strong><span>{booking.id} · Total {formatCurrency(booking.amount)}</span></div><strong className="credit-amount">{formatCurrency(booking.paid - booking.amount)}</strong></div>
-            <div className="payment-transaction-meta"><span>{formatCurrency(booking.paid)} paid</span><span>Excess to return</span><StatusBadge kind="warning">Overpaid</StatusBadge></div>
-          </article>)}
-          {overpaymentBookings.length === 0 && <div className="empty-state"><strong>No overpayment remains</strong><span>Refresh the payment records and check the current booking balance.</span></div>}
-        </div>
-        {creditStatusError && <p className="payment-error" role="alert">{creditStatusError}</p>}
-        {overpaymentBookings.length > 0 && <footer className="assignment-actions">
-          {overpaymentBookings.map((booking) => <button className="button button-primary credit-return-button" key={booking.id} disabled={Boolean(creditReturnSavingId)} onClick={() => submitOverpaymentReturn(booking)}>{creditReturnSavingId === booking.id ? 'Returning…' : `Confirm return ${formatCurrency(booking.paid - booking.amount)}`}</button>)}
-        </footer>}
-      </section>
-    </div>}
-  </>
-}
-
-function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query, setQuery, onUpdateRoom, onSetMaintenance, updatingRoomId, error }: {
-  rooms: Room[]
-  bookings: Booking[]
-  occupiedRoomIds: Set<number>
-  dataLoading: boolean
-  query: string
-  setQuery: (value: string) => void
-  onUpdateRoom: (room: Room, values: RoomEditValues) => Promise<boolean>
-  onSetMaintenance: (room: Room, enabled: boolean, note: string) => Promise<boolean>
-  updatingRoomId: string | null
-  error: string
-}) {
-  const [openMenuRoomId, setOpenMenuRoomId] = useState<string | null>(null)
-  const [editingRoom, setEditingRoom] = useState<Room | null>(null)
-  const [editValues, setEditValues] = useState<RoomEditValues>({ name: '', type: '', rate: '', capacity: '', notes: '' })
-  const [maintenanceRoom, setMaintenanceRoom] = useState<Room | null>(null)
-  const [maintenanceNote, setMaintenanceNote] = useState('')
-  const todayKey = toDateKey(new Date())
-  const getCurrentBooking = (room: Room) => bookings.find((booking) =>
-    booking.roomId === Number(room.id) &&
-    (booking.status === 'Confirmed' || booking.status === 'Checked in') &&
-    booking.checkIn <= todayKey &&
-    booking.checkOut > todayKey,
-  )
-  const filteredRooms = rooms
-    .filter((room) => `${room.id} ${room.name} ${getCurrentBooking(room)?.guest ?? ''}`.toLowerCase().includes(query.toLowerCase()))
-    .sort((left, right) => Number(left.id) - Number(right.id))
-  const occupied = rooms.filter((room) => room.isActive && occupiedRoomIds.has(Number(room.id))).length
-  const vacant = rooms.filter((room) => room.isActive && !occupiedRoomIds.has(Number(room.id))).length
-  const saveRoom = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!editingRoom) return
-    const saved = await onUpdateRoom(editingRoom, editValues)
-    if (saved) setEditingRoom(null)
-  }
-  const updateMaintenance = async () => {
-    if (!maintenanceRoom) return
-    const saved = await onSetMaintenance(maintenanceRoom, !maintenanceRoom.isUnderMaintenance, maintenanceNote)
-    if (saved) setMaintenanceRoom(null)
-  }
-
-  return <>
-    <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Rooms</h1><p className="subtitle">Room inventory, occupancy, and maintenance.</p></div></div>
-    <div className="room-summary room-summary-two">
-      <div><span className="summary-dot occupied-dot" /><strong>{dataLoading ? '—' : occupied}</strong><span>Occupied</span></div>
-      <div><span className="summary-dot available-dot" /><strong>{dataLoading ? '—' : vacant}</strong><span>Vacant</span></div>
-    </div>
-    <section className="card rooms-card">
-      <div className="filter-bar"><div className="search-box"><Search size={17} /><input placeholder="Search rooms or guests..." value={query} onChange={(event) => setQuery(event.target.value)} /></div></div>
-      {error && <div className="room-status-error" role="alert">{error}</div>}
-      <div className="room-grid">
-        {filteredRooms.map((room) => {
-          const currentBooking = getCurrentBooking(room)
-          const isOccupied = occupiedRoomIds.has(Number(room.id))
-          const status = dataLoading ? 'checking' : room.isUnderMaintenance ? 'maintenance' : !room.isActive ? 'inactive' : isOccupied ? 'occupied' : 'vacant'
-          const image = roomImages[room.name.toLowerCase()]
-          return <article className={`room-tile ${isOccupied ? 'room-tile-occupied' : ''} ${room.isUnderMaintenance ? 'room-tile-maintenance' : ''}`} key={room.id}>
-            <div className="room-image">
-              <BedDouble className="room-image-fallback" size={28} />
-              {image && <img className="room-photo" src={image} alt={`${room.name} room`} onError={(event) => { event.currentTarget.style.display = 'none' }} />}
-              <span className={`room-status status-${status}`}>{status === 'checking' ? 'Checking...' : status === 'maintenance' ? 'Maintenance' : status === 'inactive' ? 'Inactive' : status === 'occupied' ? 'Occupied' : 'Vacant'}</span>
-              <div className="room-menu-container">
-                <button className="room-menu" aria-label={`More actions for ${room.name}`} aria-expanded={openMenuRoomId === room.id} disabled={dataLoading || Boolean(updatingRoomId)} onClick={() => setOpenMenuRoomId(openMenuRoomId === room.id ? null : room.id)}><MoreHorizontal size={17} /></button>
-                {openMenuRoomId === room.id && <div className="room-menu-dropdown" role="menu">
-                  <button role="menuitem" onClick={() => {
-                    setEditValues({ name: room.name, type: room.type, rate: String(room.rate), capacity: String(room.capacity), notes: room.notes })
-                    setEditingRoom(room)
-                    setOpenMenuRoomId(null)
-                  }}><FileText size={14} /> Edit room</button>
-                  <button role="menuitem" disabled={(Boolean(currentBooking) && !room.isUnderMaintenance) || (!room.isActive && !room.isUnderMaintenance)} title={currentBooking && !room.isUnderMaintenance ? 'A guest is currently checked in.' : !room.isActive && !room.isUnderMaintenance ? 'This room is already offline.' : undefined} onClick={() => {
-                    setMaintenanceRoom(room)
-                    setMaintenanceNote(room.maintenanceNote)
-                    setOpenMenuRoomId(null)
-                  }}><Wrench size={14} /> {room.isUnderMaintenance ? 'End maintenance' : 'Set for maintenance'}</button>
-                </div>}
-              </div>
-            </div>
-            <div className="room-tile-body">
-              <div className="room-title"><div><span className="room-number">Room {room.id}</span><h2>{room.name}</h2></div><span className="room-type">{room.type}</span></div>
-              <div className="room-meta"><span><Users size={13} /> Up to {room.capacity}</span><strong>{formatCurrency(room.rate)} <small>/ night</small></strong></div>
-              {currentBooking && <div className="room-card-current-guest"><small>Current guest</small><strong>{currentBooking.guest}</strong></div>}
-              {room.isUnderMaintenance && room.maintenanceNote && <div className="room-card-current-guest"><small>Maintenance note</small><strong>{room.maintenanceNote}</strong></div>}
-            </div>
-          </article>
-        })}
-      </div>
-      {filteredRooms.length === 0 && <div className="empty-state"><BedDouble size={25} /><strong>No rooms found</strong><span>Try a different room number or guest name.</span></div>}
-    </section>
-    {editingRoom && <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !updatingRoomId) setEditingRoom(null) }}>
-      <section className="assignment-dialog card room-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-room-title">
-        <header className="assignment-header"><div><p className="eyebrow">Room inventory</p><h2 id="edit-room-title">Edit {editingRoom.name}</h2><p className="subtitle">Changes update this room’s details in the booking system.</p></div><button className="icon-button" onClick={() => setEditingRoom(null)} aria-label="Close room editor" disabled={Boolean(updatingRoomId)}><X size={19} /></button></header>
-        <form className="room-editor-form" onSubmit={saveRoom}>
-          <label>Room name<input required maxLength={80} value={editValues.name} onChange={(event) => setEditValues({ ...editValues, name: event.target.value })} /></label>
-          <label>Room type<input required maxLength={80} value={editValues.type} onChange={(event) => setEditValues({ ...editValues, type: event.target.value })} /></label>
-          <div className="room-editor-row">
-            <label>Price per night<input required type="number" min="0" step="0.01" value={editValues.rate} onChange={(event) => setEditValues({ ...editValues, rate: event.target.value })} /></label>
-            <label>Guest capacity<input required type="number" min="1" step="1" value={editValues.capacity} onChange={(event) => setEditValues({ ...editValues, capacity: event.target.value })} /></label>
-          </div>
-          <label>Description<textarea rows={3} maxLength={1000} value={editValues.notes} onChange={(event) => setEditValues({ ...editValues, notes: event.target.value })} /></label>
-          <footer className="assignment-actions"><button className="button button-secondary" type="button" onClick={() => setEditingRoom(null)} disabled={Boolean(updatingRoomId)}>Cancel</button><button className="button button-primary" type="submit" disabled={Boolean(updatingRoomId)}>{updatingRoomId === editingRoom.id ? 'Saving…' : 'Save changes'}</button></footer>
-        </form>
-      </section>
-    </div>}
-    {maintenanceRoom && <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !updatingRoomId) setMaintenanceRoom(null) }}>
-      <section className="assignment-dialog card room-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="room-maintenance-title">
-        <header className="assignment-header"><div><p className="eyebrow">Room availability</p><h2 id="room-maintenance-title">{maintenanceRoom.isUnderMaintenance ? 'End maintenance?' : 'Set room for maintenance?'}</h2><p className="subtitle">{maintenanceRoom.isUnderMaintenance ? `${maintenanceRoom.name} will become bookable again.` : `${maintenanceRoom.name} will be removed from new bookings until maintenance is ended. Existing bookings are not changed.`}</p></div><button className="icon-button" onClick={() => setMaintenanceRoom(null)} aria-label="Close maintenance dialog" disabled={Boolean(updatingRoomId)}><X size={19} /></button></header>
-        {!maintenanceRoom.isUnderMaintenance && <label className="room-maintenance-field">Reason or staff note (optional)<textarea rows={3} maxLength={300} value={maintenanceNote} onChange={(event) => setMaintenanceNote(event.target.value)} placeholder="For example, deep cleaning or air-conditioner repair." /></label>}
-        {maintenanceRoom.isUnderMaintenance && maintenanceRoom.maintenanceNote && <p className="room-maintenance-current-note">Current note: {maintenanceRoom.maintenanceNote}</p>}
-        <footer className="assignment-actions"><button className="button button-secondary" onClick={() => setMaintenanceRoom(null)} disabled={Boolean(updatingRoomId)}>Cancel</button><button className="button button-primary" onClick={() => void updateMaintenance()} disabled={Boolean(updatingRoomId)}>{updatingRoomId === maintenanceRoom.id ? 'Saving…' : maintenanceRoom.isUnderMaintenance ? 'End maintenance' : 'Confirm maintenance'}</button></footer>
-      </section>
-    </div>}
-  </>
-}
-
-function PlaceholderPage({ title, onBack }: { title: string; onBack: () => void }) {
-  return <div className="placeholder-page"><div className="placeholder-icon"><CircleDollarSign size={25} /></div><p className="eyebrow">Hometel workspace</p><h1>{title}</h1><p className="subtitle">This module is ready for your property data. Use Overview to see today’s operations.</p><button className="button button-secondary" onClick={onBack}>Back to overview</button></div>
-}
-
-function ToursWorkspacePage({ title }: { title: string }) {
-  const descriptions: Record<string, string> = {
-    Overview: 'Tour activity and performance will appear here.',
-    Bookings: 'Tour reservations will appear here.',
-    Payments: 'Payments for tour reservations will appear here.',
-  }
-
-  return <div className="page-content-inner">
-    <div className="page-heading">
-      <div><p className="eyebrow">Tours workspace</p><h1>{title}</h1><p className="subtitle">{descriptions[title] ?? `${title} for Tours.`}</p></div>
-    </div>
-    <section className="card tour-empty-card">
-      <div className="placeholder-icon"><Plane size={25} /></div>
-      <h2>Tours data is not connected yet</h2>
-      <p>Hometel rooms, bookings, and payments are kept separate and won’t be shown in Tours. Add tour-specific tables to Supabase to display tour data here.</p>
-    </section>
-  </div>
 }
 
 export default App
