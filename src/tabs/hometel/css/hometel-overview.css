@@ -15,6 +15,13 @@
 .chart-card,.action-card,.recent-card { padding:20px; }
 .chart-legend { margin-top:21px; display:flex; align-items:center; gap:7px; color:#9a938b; font-size:14px; }
 .chart-legend strong { color:#4a433e; font-size:18px; margin-left:1px; }
+.chart-card-heading { gap:14px; }
+.chart-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:9px; }
+.chart-view-toggle { display:inline-flex; align-items:center; gap:2px; padding:3px; border:1px solid var(--line); border-radius:7px; background:#faf8f5; }
+.chart-view-toggle button { border:0; border-radius:5px; padding:6px 9px; background:transparent; color:#817970; font:inherit; font-size:14px; cursor:pointer; }
+.chart-view-toggle button.active { background:#fff; color:#51483f; box-shadow:0 1px 3px #33291c1a; font-weight:600; }
+.chart-view-toggle button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.chart-legend .revenue-dot { background:#438a6c; }
 .action-card { min-height:296px; }
 .action-card .card-heading { margin-bottom:10px; }
 .more-button { border:0; background:none; color:#a19b94; padding:0; }
@@ -56,3 +63,4 @@
 .eyebrow,.workspace-label,.brand small,.metric-change,.card-heading p,.attention-copy span,.text-button,.table-subtext,.room-number,.room-type,.room-card-current-guest small,.payment-error,.payment-success { font-size:15px; }
 .help-card strong,.subtitle,.button,.metric-card p,.attention-copy strong,.badge,.filter-button,.search-box input,.select-wrap select,.table-scroll td,.payment-entry label,.assignment-form label,.room-editor-form label,.room-maintenance-field,.payment-transaction-meta > span { font-size:17px; }
 .help-card span,.help-card button,.metric-popup-meta,.table-scroll th,.payment-view-button,.payment-status-summary,.guest-detail span,.room-meta,.room-maintenance-current-note { font-size:16px; }
+@media (max-width:720px) { .chart-card-heading { align-items:flex-start; flex-direction:column; }.chart-controls { width:100%; justify-content:space-between; }.chart-view-toggle button { padding:6px 8px; } }

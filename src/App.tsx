@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Bell, CalendarDays, CircleDollarSign, Menu, CheckCheck, X } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabaseClient'
@@ -125,7 +125,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('All statuses')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenu, setMobileMenu] = useState(false)
-  const [range, setRange] = useState('Last 30 days')
+  const [range, setRange] = useState('This month')
 
   const roomsRef = useRef(rooms)
   const guestsRef = useRef(guests)
@@ -592,23 +592,46 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     hasSpecialRequest(booking) &&
     !booking.specialRequestNoted,
   )
-  const rangeDays = range === 'Last 7 days'
-    ? 7
-    : range === 'This year'
-      ? Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 1).getTime()) / 86_400_000) + 1
-      : 30
-  const chartData = useMemo(() => {
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - rangeDays + 1)
-    return Array.from({ length: rangeDays }, (_, index) => {
-      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
-      const day = toDateKey(date)
-      return {
-        day: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        value: bookings.filter((booking) => booking.createdAt.slice(0, 10) === day).length,
-      }
-    })
-  }, [bookings, rangeDays, today.getFullYear(), today.getMonth(), today.getDate()])
+  const currentChartDate = new Date(`${todayKey}T00:00:00`)
+  const chartPeriods = range === 'This year'
+    ? Array.from({ length: currentChartDate.getMonth() + 1 }, (_, month) => {
+        const date = new Date(currentChartDate.getFullYear(), month, 1)
+        return {
+          key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+          label: date.toLocaleDateString('en-US', { month: 'short' }),
+        }
+      })
+    : (() => {
+        const start = range === 'This week'
+          ? new Date(currentChartDate.getFullYear(), currentChartDate.getMonth(), currentChartDate.getDate() - ((currentChartDate.getDay() + 6) % 7))
+          : new Date(currentChartDate.getFullYear(), currentChartDate.getMonth(), 1)
+        const periodCount = Math.floor((currentChartDate.getTime() - start.getTime()) / 86_400_000) + 1
+        return Array.from({ length: periodCount }, (_, index) => {
+          const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
+          return { key: toDateKey(date), label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
+        })
+      })()
+  const periodKeyFor = (value: string) => range === 'This year' ? value.slice(0, 7) : value.slice(0, 10)
+  const bookingCounts = new Map<string, number>()
+  bookings.forEach((booking) => {
+    const key = periodKeyFor(booking.createdAt)
+    bookingCounts.set(key, (bookingCounts.get(key) ?? 0) + 1)
+  })
+  const chartData = chartPeriods.map(({ key, label }) => ({ day: label, value: bookingCounts.get(key) ?? 0 }))
   const bookingsInRange = chartData.reduce((total, item) => total + item.value, 0)
+  const revenueByPeriod = new Map<string, number>()
+  bookings.forEach((booking) => booking.payments.forEach((payment) => {
+    if (payment.status.toLowerCase() !== 'paid' || !payment.paidAt) return
+    const key = periodKeyFor(payment.paidAt)
+    revenueByPeriod.set(key, (revenueByPeriod.get(key) ?? 0) + payment.amount)
+  }))
+  roomChanges.forEach((change) => {
+    if (!change.credit_returned || !change.credit_returned_at) return
+    const key = periodKeyFor(change.credit_returned_at)
+    revenueByPeriod.set(key, (revenueByPeriod.get(key) ?? 0) - change.credit_amount)
+  })
+  const revenueChartData = chartPeriods.map(({ key, label }) => ({ day: label, value: revenueByPeriod.get(key) ?? 0 }))
+  const revenueInRange = revenueChartData.reduce((total, item) => total + item.value, 0)
 
   const updateBookingStatus = (status: BookingStatus) => {
     if (!selectedBooking) return
@@ -1379,7 +1402,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           >
             <img className="brand-mark" src="/siayanrock-logo.jpg" alt="" />
           </button>
-          {sidebarOpen && <div><strong>SiayanRock</strong><small>ADMIN</small></div>}
+          {sidebarOpen && <div><strong>Siayanrock Is.</strong><small>ADMIN</small></div>}
         </div>
         <div className="workspace-label">{sidebarOpen && 'HOMETEL'}</div>
         <nav className="nav-list" aria-label="Main navigation">
@@ -1455,7 +1478,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
         <div className="page-content">
           {activeGroup === 'tours' ? (activeNav === 'Bookings' ? <ToursBookingsTab /> : activeNav === 'Payments' ? <ToursPaymentsTab /> : <ToursOverviewTab />) : activeNav === 'Overview' ? (
-            <HometelOverview dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} bookingsInRange={bookingsInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
+            <HometelOverview dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} revenueChartData={revenueChartData} bookingsInRange={bookingsInRange} revenueInRange={revenueInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
           ) : activeNav === 'Bookings' ? (
             <BookingsPage bookings={bookings} loadError={bookingsLoadError} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} onEditBooking={(booking) => { setEditBookingError(''); setBookingToEdit(booking) }} onDeleteBooking={(booking) => { setBookingDeleteError(''); setBookingToDelete(booking) }} onSpecialRequestNoted={setBookingSpecialRequestNoted} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
           ) : activeNav === 'Rooms' ? (

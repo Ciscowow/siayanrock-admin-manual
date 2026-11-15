@@ -6,7 +6,7 @@
 .brand-mark { display:block; width:40px; height:40px; flex:none; border:1px solid #eae6df; border-radius:7px; background:#fff; object-fit:cover; }
 .brand-logo-button { display:grid; flex:none; padding:0; border:0; border-radius:7px; background:transparent; cursor:pointer; }
 .brand-logo-button:focus-visible { outline:2px solid #d49b79; outline-offset:3px; }
-.brand strong { display:block; color:#fff; font:600 21px 'Urbanist'; letter-spacing:-.2px; line-height:1; }
+.brand strong { display:block; color:#fff; font:600 21px 'Gowun Batang',serif; letter-spacing:-.2px; line-height:1; }
 .brand strong span { color:#d49b79; }
 .brand small { display:block; font-size:12px; letter-spacing:1.5px; color:#8f867e; margin-top:5px; }
 .sidebar-collapsed .brand { padding-inline:8px; }
