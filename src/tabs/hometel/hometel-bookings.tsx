@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, LogIn, MoreVertical, Pencil, Search, Trash2, X } from 'lucide-react'
+import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate, hasSpecialRequest, statusKind, toDateKey } from '../shared'
 import { StatusBadge } from '../StatusBadge'
-import type { Booking, BookingStatus, Guest, GuestAssignment, NewBookingValues, PaymentStatus, Room } from '../types'
+import type { AirportTransferVehicleType, Booking, BookingStatus, Guest, GuestAssignment, NewBookingValues, PaymentStatus, Room } from '../types'
 import './css/hometel-bookings.css'
 
 export function BookingsPage({ bookings, loadError, query, setQuery, statusFilter, setStatusFilter, specialRequestsOnly, setSpecialRequestsOnly, onStatusChange, onManagePayment, onEditBooking, onDeleteBooking, onSpecialRequestNoted, onCreateBooking }: { bookings: Booking[]; loadError: string; query: string; setQuery: (v: string) => void; statusFilter: string; setStatusFilter: (v: string) => void; specialRequestsOnly: boolean; setSpecialRequestsOnly: (value: boolean) => void; onStatusChange: (b: Booking, status: BookingStatus) => Promise<boolean>; onManagePayment: (b: Booking) => void; onEditBooking: (booking: Booking) => void; onDeleteBooking: (booking: Booking) => void; onSpecialRequestNoted: (booking: Booking, noted: boolean) => Promise<string | null>; onCreateBooking: () => void }) {
@@ -300,7 +301,7 @@ export function EditBookingDialog({ booking, rooms, bookings, error, saving, onC
   })
   const selectedRoom = availableRooms.find((room) => room.id === roomId)
   const nights = Math.max(0, Math.round((new Date(`${checkOut}T00:00:00`).getTime() - new Date(`${checkIn}T00:00:00`).getTime()) / 86_400_000))
-  const totalPrice = (selectedRoom?.rate ?? 0) * nights
+  const totalPrice = (selectedRoom?.rate ?? 0) * nights + booking.airportTransferPrice
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedRoom || nights < 1) return
@@ -336,7 +337,7 @@ export function EditBookingDialog({ booking, rooms, bookings, error, saving, onC
         <label>Special request / notes
           <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} placeholder="Add requests or notes for this booking (optional)." disabled={saving} />
         </label>
-        <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Updated total` : 'Updated total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Updated total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
         {!selectedRoom && <p className="payment-error" role="status">No available room matches these dates and guest count.</p>}
         {error && <p className="payment-error" role="alert">{error}</p>}
         <footer className="assignment-actions">
@@ -660,6 +661,7 @@ export function BookingDrawer({ booking, onClose, onStatusChange, onAddPayment, 
               <div><span>Guests</span><strong>{booking.guests} guests</strong></div>
               <div><span>Check-in</span><strong>{formatDate(booking.checkIn)}</strong></div>
               <div><span>Check-out</span><strong>{formatDate(booking.checkOut)}</strong></div>
+              <div><span>Airport transfer</span><strong>{booking.airportTransferVehicleType ? `${booking.airportTransferVehicleType === 'van' ? 'Van' : 'Tricycle'} · ${formatCurrency(booking.airportTransferPrice)}` : 'Not requested'}</strong></div>
             </div>
           </div>
           <div className="detail-section">
@@ -811,6 +813,49 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
   const [guestCount, setGuestCount] = useState('1')
   const [specialRequests, setSpecialRequests] = useState('')
   const [status, setStatus] = useState<'pending' | 'confirmed'>('confirmed')
+  const [airportTransferVehicleType, setAirportTransferVehicleType] = useState<AirportTransferVehicleType | null>(null)
+  const [transferRates, setTransferRates] = useState<Record<AirportTransferVehicleType, number> | null>(null)
+  const [transferRatesLoading, setTransferRatesLoading] = useState(true)
+  const [transferRatesError, setTransferRatesError] = useState('')
+  useEffect(() => {
+    let isMounted = true
+    const loadTransferRates = async () => {
+      const { data, error } = await supabase.from('transfer_rates').select('vehicle_type, price')
+      if (error) {
+        console.error('Unable to load airport transfer prices for booking:', error)
+        if (isMounted) {
+          setTransferRatesError(`Unable to load airport transfer prices: ${error.message}`)
+          setTransferRatesLoading(false)
+        }
+        return
+      }
+
+      const rates = new Map<string, number>()
+      data.forEach((rate) => {
+        const vehicleType = String(rate.vehicle_type).trim().toLowerCase()
+        if (!rates.has(vehicleType) || rate.vehicle_type === vehicleType) {
+          rates.set(vehicleType, Number(rate.price))
+        }
+      })
+      const van = rates.get('van')
+      const tricycle = rates.get('tricycle')
+      if (van === undefined || tricycle === undefined || !Number.isFinite(Number(van)) || !Number.isFinite(Number(tricycle)) || Number(van) < 0 || Number(tricycle) < 0) {
+        if (isMounted) {
+          setTransferRatesError('Set valid Van and Tricycle prices in Hometel > Rates before offering airport transfers.')
+          setTransferRatesLoading(false)
+        }
+        return
+      }
+
+      if (isMounted) {
+        setTransferRates({ van: Number(van), tricycle: Number(tricycle) })
+        setTransferRatesLoading(false)
+      }
+    }
+
+    void loadTransferRates()
+    return () => { isMounted = false }
+  }, [])
   const normalizedEmail = email.trim().toLowerCase()
   const normalizedPhone = phone.replace(/\D/g, '')
   const matchingGuest = guests.find((guest) =>
@@ -841,7 +886,10 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
 
   const selectedRoom = availableRooms.find((room) => room.id === roomId)
   const nights = Math.max(0, Math.round((new Date(`${checkOut}T00:00:00`).getTime() - new Date(`${checkIn}T00:00:00`).getTime()) / 86_400_000))
-  const totalPrice = (selectedRoom?.rate ?? 0) * nights
+  const transferPrice = airportTransferVehicleType && transferRates
+    ? transferRates[airportTransferVehicleType]
+    : 0
+  const totalPrice = (selectedRoom?.rate ?? 0) * nights + transferPrice
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedRoom) return
@@ -855,6 +903,8 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
       guestCount: Number(guestCount),
       specialRequests,
       status,
+      airportTransferVehicleType,
+      airportTransferPrice: transferPrice,
     })
   }
 
@@ -904,10 +954,25 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
             </select>
           </label>
         </div>
+        <label className="airport-transfer-option">
+          <input type="checkbox" checked={airportTransferVehicleType !== null} onChange={(event) => setAirportTransferVehicleType(event.target.checked ? 'van' : null)} disabled={saving || transferRatesLoading || !transferRates} />
+          <span>Guest will avail of airport transfer</span>
+        </label>
+        {transferRatesLoading && <p className="room-change-note" role="status">Loading airport transfer prices…</p>}
+        {transferRatesError && <p className="payment-error" role="alert">{transferRatesError}</p>}
+        {airportTransferVehicleType && transferRates && <label>Airport transfer vehicle
+          <select value={airportTransferVehicleType} onChange={(event) => {
+            const vehicleType = event.target.value
+            if (vehicleType === 'van' || vehicleType === 'tricycle') setAirportTransferVehicleType(vehicleType)
+          }} disabled={saving}>
+            <option value="van">Van · {formatCurrency(transferRates.van)}</option>
+            <option value="tricycle">Tricycle · {formatCurrency(transferRates.tricycle)}</option>
+          </select>
+        </label>}
         <label><span className="assignment-label-title">Special requests <span>(optional)</span></span>
           <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} disabled={saving} />
         </label>
-        <div className="assignment-total"><span>Booking total</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        <div className="assignment-total"><span>{airportTransferVehicleType ? `Room stay + ${airportTransferVehicleType} airport transfer` : 'Booking total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
         {!selectedRoom && <p className="payment-error" role="status">No active room is available for the selected stay dates.</p>}
         {error && <p className="payment-error" role="alert">{error}</p>}
         <footer className="assignment-actions">
@@ -954,7 +1019,7 @@ export function RoomChangeDialog({ guest, rooms, bookings, setupError, error, sa
   const nights = booking
     ? Math.max(0, Math.round((new Date(`${booking.checkOut}T00:00:00`).getTime() - new Date(`${booking.checkIn}T00:00:00`).getTime()) / 86_400_000))
     : 0
-  const newTotal = (selectedRoom?.rate ?? 0) * nights
+  const newTotal = (selectedRoom?.rate ?? 0) * nights + (booking?.airportTransferPrice ?? 0)
   const displayedTotal = booking ? selectedRoom ? newTotal : booking.amount : 0
   const displayedBalance = booking ? Math.max(0, displayedTotal - booking.paid) : 0
   const displayedOverpayment = booking ? Math.max(0, booking.paid - displayedTotal) : 0
@@ -993,7 +1058,7 @@ export function RoomChangeDialog({ guest, rooms, bookings, setupError, error, sa
               {availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
             </select>
           </label>
-          <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Updated total` : 'Current booking total'}</span><strong>{formatCurrency(displayedTotal)}</strong></div>
+          <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Current booking total'}</span><strong>{formatCurrency(displayedTotal)}</strong></div>
           <div className="room-change-payment">
             <div><span>Previously paid</span><strong>{formatCurrency(booking.paid)}</strong></div>
             <div><span>Remaining balance</span><strong>{formatCurrency(displayedBalance)}</strong></div>

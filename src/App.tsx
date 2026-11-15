@@ -3,10 +3,11 @@ import { Bell, CalendarDays, CircleDollarSign, Menu, CheckCheck, X } from 'lucid
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabaseClient'
 import { formatCurrency, formatDate, formatDateTime, hasSpecialRequest, hometelItems, mapSupabaseRoom, toDateKey, tourItems } from './tabs/shared'
-import type { Booking, BookingStatus, DashboardNotification, Guest, GuestAssignment, MetricDetail, MetricPopup, NewBookingValues, Room, RoomChangeRecord, RoomEditValues, SupabaseBooking } from './tabs/types'
+import type { AirportTransferVehicleType, Booking, BookingStatus, DashboardNotification, Guest, GuestAssignment, MetricDetail, MetricPopup, NewBookingValues, Room, RoomChangeRecord, RoomEditValues, SupabaseBooking } from './tabs/types'
 import HometelOverview, { MetricPopupDialog } from './tabs/hometel/hometel-overview'
 import { BookingsPage, BookingDrawer, BookingActionDialog, DeleteBookingDialog, EditBookingDialog, NewBookingDialog, GuestAssignmentDialog, RoomChangeDialog } from './tabs/hometel/hometel-bookings'
 import { RoomsPage } from './tabs/hometel/hometel-rooms'
+import { RatesPage } from './tabs/hometel/hometel-rates'
 import { GuestsPage } from './tabs/hometel/hometel-guests'
 import { PaymentsPage } from './tabs/hometel/hometel-payments'
 import { ToursOverviewTab } from './tabs/tours/tours-overview'
@@ -215,6 +216,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
             phone: guest?.phone ?? '',
             request: record.special_requests ?? 'No special requests.',
             specialRequestNoted: Boolean(record.special_requests_noted),
+            airportTransferVehicleType: record.airport_transfer_vehicle_type ?? null,
+            airportTransferPrice: Number(record.airport_transfer_price ?? 0),
           }
         })
 
@@ -293,6 +296,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           status?: string
           special_requests?: string | null
           special_requests_noted?: boolean | null
+          airport_transfer_vehicle_type?: AirportTransferVehicleType | null
+          airport_transfer_price?: number | string | null
           created_at?: string
         }
         if (!booking.id) return
@@ -339,6 +344,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
             phone: guestPhone,
             request: booking.special_requests ?? 'No special requests.',
             specialRequestNoted: Boolean(booking.special_requests_noted),
+            airportTransferVehicleType: booking.airport_transfer_vehicle_type ?? null,
+            airportTransferPrice: Number(booking.airport_transfer_price ?? 0),
           }
           setBookings((items) => items.some((item) => item.id === liveBooking.id) ? items : [liveBooking, ...items])
           pushNotification({
@@ -789,6 +796,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       phone: guest.phone ?? '',
       request: 'No special requests.',
       specialRequestNoted: false,
+      airportTransferVehicleType: null,
+      airportTransferPrice: 0,
     }
     setBookings((items) => [booking, ...items])
     pushNotification({
@@ -838,6 +847,32 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     }
 
     setNewBookingSaving(true)
+    let airportTransferPrice = 0
+    if (values.airportTransferVehicleType) {
+      const { data: transferRate, error: transferRateError } = await supabase
+        .from('transfer_rates')
+        .select('price')
+        .eq('vehicle_type', values.airportTransferVehicleType)
+        .maybeSingle()
+      if (transferRateError) {
+        console.error('Unable to verify airport transfer price for booking:', transferRateError)
+        setNewBookingError(`Unable to verify airport transfer price: ${transferRateError.message}`)
+        setNewBookingSaving(false)
+        return
+      }
+      if (!transferRate || !Number.isFinite(Number(transferRate.price)) || Number(transferRate.price) < 0) {
+        setNewBookingError('The selected airport transfer has no valid price. Update Hometel > Rates and try again.')
+        setNewBookingSaving(false)
+        return
+      }
+      if (Number(transferRate.price) !== values.airportTransferPrice) {
+        setNewBookingError('Airport transfer prices changed. Close and reopen the booking form to refresh the rates.')
+        setNewBookingSaving(false)
+        return
+      }
+      airportTransferPrice = Number(transferRate.price)
+    }
+
     const email = values.email.trim()
     const phone = values.phone.trim()
     const normalizedEmail = email.toLowerCase()
@@ -874,7 +909,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     }
 
     const nights = Math.round((new Date(`${values.checkOut}T00:00:00`).getTime() - new Date(`${values.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights
+    const totalPrice = room.rate * nights + airportTransferPrice
     const { data, error } = await supabase.from('bookings').insert({
       room_id: values.roomId,
       guest_id: guest.id,
@@ -886,6 +921,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       status: values.status,
       payment_status: 'unpaid',
       special_requests: values.specialRequests.trim() || null,
+      airport_transfer_vehicle_type: values.airportTransferVehicleType,
+      airport_transfer_price: airportTransferPrice,
     }).select('id, created_at').single()
 
     if (error) {
@@ -925,6 +962,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       phone: guest.phone ?? '',
       request: values.specialRequests.trim() || 'No special requests.',
       specialRequestNoted: false,
+      airportTransferVehicleType: values.airportTransferVehicleType,
+      airportTransferPrice,
     }
     setBookings((items) => [booking, ...items])
     pushNotification({
@@ -975,7 +1014,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
     setEditBookingSaving(true)
     const nights = Math.round((new Date(`${assignment.checkOut}T00:00:00`).getTime() - new Date(`${assignment.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights
+    const totalPrice = room.rate * nights + booking.airportTransferPrice
     const paymentStatus = booking.paid > totalPrice
       ? 'overpaid'
       : totalPrice > 0 && booking.paid >= totalPrice
@@ -1118,7 +1157,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
     setAssignmentSaving(true)
     const nights = Math.round((new Date(`${booking.checkOut}T00:00:00`).getTime() - new Date(`${booking.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights
+    const totalPrice = room.rate * nights + booking.airportTransferPrice
     const { data, error } = await supabase.rpc('change_booking_room', {
       p_booking_id: booking.id,
       p_new_room_id: roomId,
@@ -1483,6 +1522,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
             <BookingsPage bookings={bookings} loadError={bookingsLoadError} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} onEditBooking={(booking) => { setEditBookingError(''); setBookingToEdit(booking) }} onDeleteBooking={(booking) => { setBookingDeleteError(''); setBookingToDelete(booking) }} onSpecialRequestNoted={setBookingSpecialRequestNoted} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
           ) : activeNav === 'Rooms' ? (
             <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onUpdateRoom={updateRoomDetails} onSetMaintenance={setRoomMaintenance} updatingRoomId={updatingRoomId} error={roomStatusError} />
+          ) : activeNav === 'Rates' ? (
+            <RatesPage />
           ) : activeNav === 'Guests' ? (
             <GuestsPage guests={guests} bookings={bookings} query={query} setQuery={setQuery} onDeleteGuest={deleteGuestAndHistory} deleteSavingId={guestDeleteSavingId} deleteError={guestDeleteError} />
           ) : activeNav === 'Payments' ? (
