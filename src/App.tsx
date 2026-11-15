@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, CalendarDays, CircleDollarSign, LogOut, Menu, CheckCheck, X } from 'lucide-react'
+import { Bell, CalendarDays, CircleDollarSign, Menu, CheckCheck, X } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabaseClient'
 import { formatCurrency, formatDate, formatDateTime, hasSpecialRequest, hometelItems, mapSupabaseRoom, toDateKey, tourItems } from './tabs/shared'
@@ -12,6 +12,7 @@ import { PaymentsPage } from './tabs/hometel/hometel-payments'
 import { ToursOverviewTab } from './tabs/tours/tours-overview'
 import { ToursBookingsTab } from './tabs/tours/tours-bookings'
 import { ToursPaymentsTab } from './tabs/tours/tours-payments'
+import { AccountIndicator } from './AccountIndicator'
 import AdminSignIn from './AdminSignIn'
 import './App.css'
 
@@ -125,7 +126,6 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenu, setMobileMenu] = useState(false)
   const [range, setRange] = useState('Last 30 days')
-  const [accountError, setAccountError] = useState('')
 
   const roomsRef = useRef(rooms)
   const guestsRef = useRef(guests)
@@ -224,7 +224,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     }
 
     const loadRooms = async () => {
-      const { data, error } = await supabase.from('rooms').select('*').order('id', { ascending: true })
+      const { data, error } = await supabase.from('rooms').select('id, room_number, room_name, room_type, room_price, max_guests, base_guests, is_active, occupancy_status, maintenance_status, maintenance_note, description').order('id', { ascending: true })
 
       if (error) {
         console.error('Unable to load rooms from Supabase:', error)
@@ -480,6 +480,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
   const today = new Date()
   const todayKey = toDateKey(today)
+  const sidebarDate = today.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })
   const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   const activeRooms = rooms.filter((room) => room.isActive)
   const occupiedRoomIds = new Set([
@@ -1384,16 +1385,19 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
         <nav className="nav-list" aria-label="Main navigation">
           {hometelItems.map(({ label, icon: Icon, count }) => (
             <button key={`hometel-${label}`} className={`nav-item ${activeNav === label && activeGroup === 'hometel' ? 'active' : ''}`} onClick={() => nav(label, 'hometel')} title={label}>
-              <Icon size={19} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
+              <Icon size={sidebarOpen ? 19 : 22} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
             </button>
           ))}
           {sidebarOpen && <div className="workspace-label nav-section-label">TOURS</div>}
           {tourItems.map(({ label, icon: Icon, count }) => (
             <button key={`tours-${label}`} className={`nav-item ${activeNav === label && activeGroup === 'tours' ? 'active' : ''}`} onClick={() => nav(label, 'tours')} title={label}>
-              <Icon size={19} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
+              <Icon size={sidebarOpen ? 19 : 22} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
             </button>
           ))}
         </nav>
+        <div className="sidebar-date" title={today.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}>
+          {sidebarOpen && <span>{sidebarDate}</span>}
+        </div>
       </aside>
 
       <main className="main-content">
@@ -1401,10 +1405,6 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           <button className="mobile-menu-button icon-button" onClick={() => setMobileMenu(!mobileMenu)} aria-label="Open menu"><Menu size={21} /></button>
           <div className="breadcrumb"><span>{activeGroup === 'hometel' ? 'Hometel' : 'Tours'}</span><span className="slash">/</span><strong>{activeNav}</strong></div>
           <div className="topbar-actions">
-            <span className="admin-account-email">{userEmail}</span>
-            <button className="admin-sign-out button button-secondary" type="button" onClick={async () => setAccountError((await onSignOut()) ?? '')} aria-label="Sign out">
-              <LogOut size={16} /><span>Sign out</span>
-            </button>
             <div className="notification-container">
               <button
                 className="icon-button notification-button"
@@ -1440,7 +1440,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
                   ))}</div>}
               </section>}
             </div>
-            {accountError && <div className="admin-account-error" role="alert">{accountError}</div>}
+            <AccountIndicator userEmail={userEmail} onSignOut={onSignOut} />
           </div>
           {toastNotification && <div className="notification-toast" role="status">
             <button className="notification-toast-open" onClick={() => openNotification(toastNotification)}>
@@ -1455,7 +1455,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
         <div className="page-content">
           {activeGroup === 'tours' ? (activeNav === 'Bookings' ? <ToursBookingsTab /> : activeNav === 'Payments' ? <ToursPaymentsTab /> : <ToursOverviewTab />) : activeNav === 'Overview' ? (
-            <HometelOverview today={today} dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} bookingsInRange={bookingsInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
+            <HometelOverview dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} bookingsInRange={bookingsInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
           ) : activeNav === 'Bookings' ? (
             <BookingsPage bookings={bookings} loadError={bookingsLoadError} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} onEditBooking={(booking) => { setEditBookingError(''); setBookingToEdit(booking) }} onDeleteBooking={(booking) => { setBookingDeleteError(''); setBookingToDelete(booking) }} onSpecialRequestNoted={setBookingSpecialRequestNoted} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
           ) : activeNav === 'Rooms' ? (

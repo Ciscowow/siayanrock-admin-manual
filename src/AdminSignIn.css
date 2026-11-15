@@ -14,13 +14,9 @@
 .admin-sign-in-note { margin:20px 0 0; color:var(--muted); font-size:13px; text-align:center; }
 .auth-loading { display:grid; min-height:100vh; place-items:center; padding:24px; color:var(--muted); text-align:center; }
 .auth-error { color:var(--red); }
-.admin-account-email { max-width:240px; overflow:hidden; color:var(--muted); font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
-.admin-sign-out { padding:7px 10px; font-size:14px; }
-.admin-account-error { position:absolute; top:60px; right:42px; z-index:10; max-width:min(420px,calc(100vw - 24px)); padding:9px 12px; border:1px solid #f0d2d0; border-radius:7px; background:#fff; color:var(--red); font-size:13px; }
+.admin-sign-in-page { position:relative; }
+.admin-sign-in-account { position:absolute; top:24px; right:24px; z-index:5; }
 @media (max-width:720px) {
   .admin-sign-in-card { padding:28px 22px; }
-  .admin-account-email { display:none; }
-  .admin-sign-out { padding:7px; }
-  .admin-sign-out span { display:none; }
-  .admin-account-error { right:12px; }
+  .admin-sign-in-account { top:14px; right:14px; }
 }

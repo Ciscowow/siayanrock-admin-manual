@@ -41,4 +41,4 @@
 .guest-profile-actions { display:flex; justify-content:flex-end; padding-top:2px; }
 .guest-delete-dialog .assignment-header { margin-bottom:12px; }
 .guest-delete-consequence { margin:0; padding:12px; border:1px solid #eedbd8; border-radius:6px; background:#fcf6f5; color:#725550; font-size:15px; line-height:1.6; }
-@media (max-width:720px) { .guest-profile-backdrop { align-items:flex-start; padding:12px; }.assignment-dialog.guest-profile-dialog { max-height:calc(100vh - 24px); padding:20px; }.guest-profile-dialog .assignment-header h2 { font-size:25px; }.guest-profile-info { grid-template-columns:1fr; }.guest-profile-booking-meta { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:720px) { .guest-profile-backdrop { padding:12px; }.assignment-dialog.guest-profile-dialog { max-height:calc(100vh - 24px); padding:20px; }.guest-profile-dialog .assignment-header h2 { font-size:25px; }.guest-profile-info { grid-template-columns:1fr; }.guest-profile-booking-meta { grid-template-columns:repeat(2,minmax(0,1fr)); } }

@@ -28,6 +28,7 @@ export type Booking = {
 
 export type Room = {
   id: string
+  roomNumber: string
   name: string
   type: string
   status: 'occupied' | 'vacant'

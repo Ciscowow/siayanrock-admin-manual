@@ -8,6 +8,7 @@ export const hasSpecialRequest = (booking: Booking) => {
 
 export const mapSupabaseRoom = (record: SupabaseRoom): Room => ({
   id: String(record.id),
+  roomNumber: record.room_number?.trim() || String(record.id),
   name: record.room_name ?? `Room ${record.room_number ?? record.id}`,
   type: record.room_type ?? 'Standard',
   status: record.occupancy_status === 'occupied' ? 'occupied' : 'vacant',
@@ -19,18 +20,6 @@ export const mapSupabaseRoom = (record: SupabaseRoom): Room => ({
   capacity: Number(record.max_guests ?? record.base_guests ?? 2),
   notes: record.description ?? '',
 })
-
-export const roomImages: Record<string, string> = {
-  batan: '/rooms/batan-1.jpg',
-  dinem: '/rooms/dinem-1.jpg',
-  ditarem: '/rooms/ditarem-1.jpg',
-  itbayat: '/rooms/itbayat-1.jpg',
-  mavudis: '/rooms/mavudis-1.jpg',
-  maysanga: '/rooms/maysanga-1.jpg',
-  sabtang: '/rooms/sabtang-1.jpg',
-  siayan: '/rooms/siayan-1.jpg',
-  vuhus: '/rooms/vuhus-1.jpg',
-}
 
 export const hometelItems = [
   { label: 'Overview', icon: Home, count: undefined },

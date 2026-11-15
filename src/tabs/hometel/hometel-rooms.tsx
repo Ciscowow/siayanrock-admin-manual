@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BedDouble, FileText, MoreHorizontal, Search, Users, Wrench, X } from 'lucide-react'
-import { formatCurrency, roomImages, toDateKey } from '../shared'
+import { supabase } from '../../lib/supabaseClient'
+import { formatCurrency, toDateKey } from '../shared'
 import type { Booking, Room, RoomEditValues } from '../types'
 import './css/hometel-rooms.css'
 
@@ -29,7 +30,7 @@ export function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query
     booking.checkOut > todayKey,
   )
   const filteredRooms = rooms
-    .filter((room) => `${room.id} ${room.name} ${getCurrentBooking(room)?.guest ?? ''}`.toLowerCase().includes(query.toLowerCase()))
+    .filter((room) => `${room.roomNumber} ${room.name} ${getCurrentBooking(room)?.guest ?? ''}`.toLowerCase().includes(query.toLowerCase()))
     .sort((left, right) => Number(left.id) - Number(right.id))
   const occupied = rooms.filter((room) => room.isActive && occupiedRoomIds.has(Number(room.id))).length
   const vacant = rooms.filter((room) => room.isActive && !occupiedRoomIds.has(Number(room.id))).length
@@ -57,9 +58,13 @@ export function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query
       <div className="room-grid">
         {filteredRooms.map((room) => {
           const currentBooking = getCurrentBooking(room)
+          const roomNumber = room.roomNumber.trim() || room.id
           const isOccupied = occupiedRoomIds.has(Number(room.id))
           const status = dataLoading ? 'checking' : room.isUnderMaintenance ? 'maintenance' : !room.isActive ? 'inactive' : isOccupied ? 'occupied' : 'vacant'
-          const image = roomImages[room.name.toLowerCase()]
+          const roomFolder = room.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+          const image = roomFolder
+            ? supabase.storage.from('gallery').getPublicUrl(`rooms/${roomFolder}/${roomFolder}-1.webp`).data.publicUrl
+            : ''
           return <article className={`room-tile ${isOccupied ? 'room-tile-occupied' : ''} ${room.isUnderMaintenance ? 'room-tile-maintenance' : ''}`} key={room.id}>
             <div className="room-image">
               <BedDouble className="room-image-fallback" size={28} />
@@ -82,7 +87,7 @@ export function RoomsPage({ rooms, bookings, occupiedRoomIds, dataLoading, query
               </div>
             </div>
             <div className="room-tile-body">
-              <div className="room-title"><div><span className="room-number">Room {room.id}</span><h2>{room.name}</h2></div><span className="room-type">{room.type}</span></div>
+              <div className="room-title"><div><span className="room-number">Room {roomNumber}</span><h2>{room.name}</h2></div><span className="room-type">{room.type}</span></div>
               <div className="room-meta"><span><Users size={13} /> Up to {room.capacity}</span><strong>{formatCurrency(room.rate)} <small>/ night</small></strong></div>
               {currentBooking && <div className="room-card-current-guest"><small>Current guest</small><strong>{currentBooking.guest}</strong></div>}
               {room.isUnderMaintenance && room.maintenanceNote && <div className="room-card-current-guest"><small>Maintenance note</small><strong>{room.maintenanceNote}</strong></div>}
