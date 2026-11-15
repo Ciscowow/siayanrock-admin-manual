@@ -2,25 +2,21 @@
 .admin-sign-in-card { width:min(100%,430px); padding:36px; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 18px 55px #33291c12; }
 .admin-sign-in-card > img { display:block; width:64px; height:64px; margin-bottom:22px; border:1px solid var(--line); border-radius:10px; object-fit:cover; }
 .admin-sign-in-card .eyebrow { margin-bottom:7px; }
-.admin-sign-in-card h1 { margin:0; font:600 32px 'Playfair Display',serif; color:var(--ink); }
+.admin-sign-in-card h1 { margin:0; font:600 30px 'Playfair Display',serif; color:var(--ink); }
 .admin-sign-in-description { margin:9px 0 26px; color:var(--muted); line-height:1.5; }
 .admin-sign-in-card form { display:grid; gap:9px; }
-.admin-sign-in-card label { margin-top:8px; color:#625a53; font-size:14px; font-weight:600; }
+.admin-sign-in-card label { margin-top:8px; color:#625a53; font-size:12px; font-weight:600; }
 .admin-sign-in-card input { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:7px; color:var(--ink); outline:none; }
 .admin-sign-in-card input:focus { border-color:var(--accent); box-shadow:0 0 0 3px #bb70471c; }
 .admin-sign-in-submit { width:100%; margin-top:10px; }
 .admin-sign-in-submit:disabled { cursor:wait; opacity:.7; }
-.admin-sign-in-error { margin:4px 0 0; color:var(--red); font-size:14px; line-height:1.5; }
-.admin-sign-in-note { margin:20px 0 0; color:var(--muted); font-size:13px; text-align:center; }
+.admin-sign-in-error { margin:4px 0 0; color:var(--red); font-size:12px; line-height:1.5; }
+.admin-sign-in-note { margin:20px 0 0; color:var(--muted); font-size:11px; text-align:center; }
 .auth-loading { display:grid; min-height:100vh; place-items:center; padding:24px; color:var(--muted); text-align:center; }
 .auth-error { color:var(--red); }
-.admin-account-email { max-width:240px; overflow:hidden; color:var(--muted); font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
-.admin-sign-out { padding:7px 10px; font-size:14px; }
-.admin-account-error { position:absolute; top:60px; right:42px; z-index:10; max-width:min(420px,calc(100vw - 24px)); padding:9px 12px; border:1px solid #f0d2d0; border-radius:7px; background:#fff; color:var(--red); font-size:13px; }
+.admin-sign-in-page { position:relative; }
+.admin-sign-in-account { position:absolute; top:24px; right:24px; z-index:5; }
 @media (max-width:720px) {
   .admin-sign-in-card { padding:28px 22px; }
-  .admin-account-email { display:none; }
-  .admin-sign-out { padding:7px; }
-  .admin-sign-out span { display:none; }
-  .admin-account-error { right:12px; }
+  .admin-sign-in-account { top:14px; right:14px; }
 }

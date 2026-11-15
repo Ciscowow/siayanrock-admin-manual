@@ -1,5 +1,6 @@
 export type BookingStatus = 'Confirmed' | 'Pending' | 'Checked in' | 'Completed' | 'Cancelled'
 export type PaymentStatus = 'Paid' | 'Partial' | 'Unpaid' | 'Overpaid'
+export type AirportTransferVehicleType = 'van' | 'tricycle'
 
 export type Booking = {
   id: string
@@ -24,10 +25,13 @@ export type Booking = {
   phone: string
   request: string
   specialRequestNoted: boolean
+  airportTransferVehicleType: AirportTransferVehicleType | null
+  airportTransferPrice: number
 }
 
 export type Room = {
   id: string
+  roomNumber: string
   name: string
   type: string
   status: 'occupied' | 'vacant'
@@ -62,6 +66,8 @@ export type SupabaseBooking = {
   invoice_sent_at?: string | null
   special_requests: string | null
   special_requests_noted?: boolean | null
+  airport_transfer_vehicle_type?: AirportTransferVehicleType | null
+  airport_transfer_price?: number | string | null
   guests: { full_name: string; email: string | null; phone: string | null } | null
   rooms: { room_name: string; room_number: string | null } | null
   payments: { id?: string; amount: number | string; payment_status: string | null; paid_at: string | null; payment_method: string | null; payment_type: string | null }[] | null
@@ -134,6 +140,8 @@ export type NewBookingValues = {
   guestCount: number
   specialRequests: string
   status: 'pending' | 'confirmed'
+  airportTransferVehicleType: AirportTransferVehicleType | null
+  airportTransferPrice: number
 }
 
 export type RoomChangeRecord = {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, BedDouble, CalendarDays, ChevronDown, CircleDollarSign, FileText, Mail, MoreHorizontal } from 'lucide-react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { formatCurrency, statusKind } from '../shared'
@@ -7,7 +7,8 @@ import type { Booking, MetricPopup } from '../types'
 import { BookingTable } from './hometel-bookings'
 import './css/hometel-overview.css'
 
-type HometelOverviewProps = { today: Date; dataLoading: boolean; invoiceSentGuests: Set<string>; monthRevenue: number; todayCheckIns: number; todayCheckOuts: number; openMetricPopup: (kind: 'occupancy' | 'revenue' | 'check-ins' | 'check-outs' | 'invoices') => void; range: string; setRange: (value: string) => void; chartData: { day: string; value: number }[]; bookingsInRange: number; pendingBookings: Booking[]; paymentAttentionBookings: Booking[]; creditItemsDueCount: number; specialRequestBookings: Booking[]; setStatusFilter: (value: string) => void; nav: (label: string, group?: 'hometel' | 'tours') => void; setPaymentStatusFilter: (value: string) => void; setQuery: (value: string) => void; setSpecialRequestsOnly: (value: boolean) => void; bookings: Booking[]; onStatusChange: (booking: Booking, status: import('../types').BookingStatus) => Promise<boolean>; onManagePayment: (booking: Booking) => void }
+type ChartPoint = { day: string; value: number }
+type HometelOverviewProps = { dataLoading: boolean; invoiceSentGuests: Set<string>; monthRevenue: number; todayCheckIns: number; todayCheckOuts: number; openMetricPopup: (kind: 'occupancy' | 'revenue' | 'check-ins' | 'check-outs' | 'invoices') => void; range: string; setRange: (value: string) => void; chartData: ChartPoint[]; revenueChartData: ChartPoint[]; bookingsInRange: number; revenueInRange: number; pendingBookings: Booking[]; paymentAttentionBookings: Booking[]; creditItemsDueCount: number; specialRequestBookings: Booking[]; setStatusFilter: (value: string) => void; nav: (label: string, group?: 'hometel' | 'tours') => void; setPaymentStatusFilter: (value: string) => void; setQuery: (value: string) => void; setSpecialRequestsOnly: (value: boolean) => void; bookings: Booking[]; onStatusChange: (booking: Booking, status: import('../types').BookingStatus) => Promise<boolean>; onManagePayment: (booking: Booking) => void }
 
 export function MetricCard({ label, value, icon, color, onClick }: { label: string; value: string; icon: React.ReactNode; color: string; onClick: () => void }) {
   return <button className="card metric-card" onClick={onClick} aria-label={`${label}: ${value}. View details`}><div className={`metric-icon ${color}`}>{icon}</div><p>{label}</p><div className="metric-value">{value}</div><span className="metric-hint">View details <ArrowUpRight size={12} /></span></button>
@@ -51,9 +52,18 @@ export function AttentionItem({ icon, title, detail, count, onClick }: { icon: R
   return <button className="attention-item" onClick={onClick}><div className="attention-icon">{icon}</div><div className="attention-copy"><strong>{title}</strong><span>{detail}</span></div><b>{count}</b><ArrowUpRight size={15} className="attention-arrow" /></button>
 }
 
-export default function HometelOverview({today,dataLoading,invoiceSentGuests,monthRevenue,todayCheckIns,todayCheckOuts,openMetricPopup,range,setRange,chartData,bookingsInRange,pendingBookings,paymentAttentionBookings,creditItemsDueCount,specialRequestBookings,setStatusFilter,nav,setPaymentStatusFilter,setQuery,setSpecialRequestsOnly,bookings,onStatusChange,onManagePayment}: HometelOverviewProps) { return <>
+export default function HometelOverview({dataLoading,invoiceSentGuests,monthRevenue,todayCheckIns,todayCheckOuts,openMetricPopup,range,setRange,chartData,revenueChartData,bookingsInRange,revenueInRange,pendingBookings,paymentAttentionBookings,creditItemsDueCount,specialRequestBookings,setStatusFilter,nav,setPaymentStatusFilter,setQuery,setSpecialRequestsOnly,bookings,onStatusChange,onManagePayment}: HometelOverviewProps) {
+  const [chartView, setChartView] = useState<'bookings' | 'revenue'>('bookings')
+  const isRevenueView = chartView === 'revenue'
+  const activeChartData = isRevenueView ? revenueChartData : chartData
+  const activeChartTotal = isRevenueView ? revenueInRange : bookingsInRange
+  const chartColor = isRevenueView ? '#438a6c' : '#c77d52'
+  const chartFillId = isRevenueView ? 'revenueFill' : 'bookingFill'
+  const chartLabel = isRevenueView ? 'Payments received' : 'Bookings'
+
+  return <>
 <div className="page-heading">
-                <div><p className="eyebrow">{today.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p><h1>Overview <span>✦</span></h1><p className="subtitle">Here’s what’s happening across your Hometel and tour operations today.</p></div>
+                <div><h1>Overview <span>✦</span></h1><p className="subtitle">Here’s what’s happening across your Hometel and Tours today.</p></div>
               </div>
               <section className="metric-grid">
                 <MetricCard label="Guests invoiced" value={dataLoading ? '—' : String(invoiceSentGuests.size)} icon={<Mail size={19} />} color="mint" onClick={() => openMetricPopup('invoices')} />
@@ -63,9 +73,18 @@ export default function HometelOverview({today,dataLoading,invoiceSentGuests,mon
               </section>
               <div className="dashboard-grid">
                 <section className="card chart-card">
-                  <div className="card-heading"><div><h2>Booking overview</h2><p>Bookings created over time</p></div><label className="select-wrap"><select value={range} onChange={(e) => setRange(e.target.value)}><option>Last 30 days</option><option>Last 7 days</option><option>This year</option></select><ChevronDown size={14} /></label></div>
-                  <div className="chart-legend"><span className="legend-dot" /> Bookings <strong>{dataLoading ? '—' : bookingsInRange}</strong></div>
-                  <div className="chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 10, right: 4, left: -24, bottom: 0 }}><defs><linearGradient id="bookingFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d69b77" stopOpacity={0.3} /><stop offset="100%" stopColor="#d69b77" stopOpacity={0.02} /></linearGradient></defs><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#9b9690', fontSize: 11 }} interval="preserveStartEnd" /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#9b9690', fontSize: 11 }} allowDecimals={false} domain={[0, (max: number) => Math.max(max, 1)]} /><Tooltip contentStyle={{ border: '1px solid #eee9e2', borderRadius: 10, boxShadow: '0 4px 15px #33291c12', fontSize: 12 }} /><Area type="monotone" dataKey="value" stroke="#c77d52" strokeWidth={2.5} fill="url(#bookingFill)" /></AreaChart></ResponsiveContainer></div>
+                  <div className="card-heading chart-card-heading">
+                    <div><h2>{isRevenueView ? 'Revenue overview' : 'Booking overview'}</h2><p>{isRevenueView ? 'Payments received over time' : 'Bookings created over time'}</p></div>
+                    <div className="chart-controls">
+                      <div className="chart-view-toggle" role="group" aria-label="Chart overview">
+                        <button type="button" className={!isRevenueView ? 'active' : ''} aria-pressed={!isRevenueView} onClick={() => setChartView('bookings')}>Bookings</button>
+                        <button type="button" className={isRevenueView ? 'active' : ''} aria-pressed={isRevenueView} onClick={() => setChartView('revenue')}>Revenue</button>
+                      </div>
+                      <label className="select-wrap"><select value={range} onChange={(e) => setRange(e.target.value)}><option>This week</option><option>This month</option><option>This year</option></select><ChevronDown size={14} /></label>
+                    </div>
+                  </div>
+                  <div className="chart-legend"><span className={`legend-dot ${isRevenueView ? 'revenue-dot' : ''}`} /> {chartLabel} <strong>{dataLoading ? '—' : isRevenueView ? formatCurrency(activeChartTotal) : activeChartTotal}</strong></div>
+                  <div className="chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={activeChartData} margin={{ top: 10, right: 4, left: -24, bottom: 0 }}><defs><linearGradient id="bookingFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d69b77" stopOpacity={0.3} /><stop offset="100%" stopColor="#d69b77" stopOpacity={0.02} /></linearGradient><linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#438a6c" stopOpacity={0.28} /><stop offset="100%" stopColor="#438a6c" stopOpacity={0.02} /></linearGradient></defs><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#9b9690', fontSize: 9 }} interval="preserveStartEnd" /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#9b9690', fontSize: 9 }} allowDecimals={isRevenueView} domain={isRevenueView ? ['auto', 'auto'] : [0, (max: number) => Math.max(max, 1)]} tickFormatter={(value: number) => isRevenueView ? `₱${value.toLocaleString('en-PH')}` : String(value)} /><Tooltip contentStyle={{ border: '1px solid #eee9e2', borderRadius: 10, boxShadow: '0 4px 15px #33291c12', fontSize: 10 }} formatter={(value) => isRevenueView ? formatCurrency(Number(value)) : value} /><Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={2.5} fill={`url(#${chartFillId})`} /></AreaChart></ResponsiveContainer></div>
                 </section>
                 <section className="card action-card">
                   <div className="card-heading"><div><h2>Needs your attention</h2><p>Items that need action today</p></div><button className="more-button" aria-label="More options"><MoreHorizontal size={18} /></button></div>

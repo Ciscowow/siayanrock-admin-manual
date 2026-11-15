@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, CalendarDays, CircleDollarSign, LogOut, Menu, CheckCheck, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Bell, CalendarDays, CircleDollarSign, Menu, CheckCheck, X } from 'lucide-react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabaseClient'
 import { formatCurrency, formatDate, formatDateTime, hasSpecialRequest, hometelItems, mapSupabaseRoom, toDateKey, tourItems } from './tabs/shared'
-import type { Booking, BookingStatus, DashboardNotification, Guest, GuestAssignment, MetricDetail, MetricPopup, NewBookingValues, Room, RoomChangeRecord, RoomEditValues, SupabaseBooking } from './tabs/types'
+import type { AirportTransferVehicleType, Booking, BookingStatus, DashboardNotification, Guest, GuestAssignment, MetricDetail, MetricPopup, NewBookingValues, Room, RoomChangeRecord, RoomEditValues, SupabaseBooking } from './tabs/types'
 import HometelOverview, { MetricPopupDialog } from './tabs/hometel/hometel-overview'
 import { BookingsPage, BookingDrawer, BookingActionDialog, DeleteBookingDialog, EditBookingDialog, NewBookingDialog, GuestAssignmentDialog, RoomChangeDialog } from './tabs/hometel/hometel-bookings'
 import { RoomsPage } from './tabs/hometel/hometel-rooms'
+import { RatesPage } from './tabs/hometel/hometel-rates'
 import { GuestsPage } from './tabs/hometel/hometel-guests'
 import { PaymentsPage } from './tabs/hometel/hometel-payments'
 import { ToursOverviewTab } from './tabs/tours/tours-overview'
 import { ToursBookingsTab } from './tabs/tours/tours-bookings'
 import { ToursPaymentsTab } from './tabs/tours/tours-payments'
+import { AccountIndicator } from './AccountIndicator'
 import AdminSignIn from './AdminSignIn'
 import './App.css'
 
@@ -124,8 +126,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('All statuses')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileMenu, setMobileMenu] = useState(false)
-  const [range, setRange] = useState('Last 30 days')
-  const [accountError, setAccountError] = useState('')
+  const [range, setRange] = useState('This month')
 
   const roomsRef = useRef(rooms)
   const guestsRef = useRef(guests)
@@ -215,6 +216,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
             phone: guest?.phone ?? '',
             request: record.special_requests ?? 'No special requests.',
             specialRequestNoted: Boolean(record.special_requests_noted),
+            airportTransferVehicleType: record.airport_transfer_vehicle_type ?? null,
+            airportTransferPrice: Number(record.airport_transfer_price ?? 0),
           }
         })
 
@@ -224,7 +227,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     }
 
     const loadRooms = async () => {
-      const { data, error } = await supabase.from('rooms').select('*').order('id', { ascending: true })
+      const { data, error } = await supabase.from('rooms').select('id, room_number, room_name, room_type, room_price, max_guests, base_guests, is_active, occupancy_status, maintenance_status, maintenance_note, description').order('id', { ascending: true })
 
       if (error) {
         console.error('Unable to load rooms from Supabase:', error)
@@ -293,6 +296,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           status?: string
           special_requests?: string | null
           special_requests_noted?: boolean | null
+          airport_transfer_vehicle_type?: AirportTransferVehicleType | null
+          airport_transfer_price?: number | string | null
           created_at?: string
         }
         if (!booking.id) return
@@ -339,6 +344,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
             phone: guestPhone,
             request: booking.special_requests ?? 'No special requests.',
             specialRequestNoted: Boolean(booking.special_requests_noted),
+            airportTransferVehicleType: booking.airport_transfer_vehicle_type ?? null,
+            airportTransferPrice: Number(booking.airport_transfer_price ?? 0),
           }
           setBookings((items) => items.some((item) => item.id === liveBooking.id) ? items : [liveBooking, ...items])
           pushNotification({
@@ -480,6 +487,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
   const today = new Date()
   const todayKey = toDateKey(today)
+  const sidebarDate = today.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })
   const monthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
   const activeRooms = rooms.filter((room) => room.isActive)
   const occupiedRoomIds = new Set([
@@ -591,23 +599,46 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     hasSpecialRequest(booking) &&
     !booking.specialRequestNoted,
   )
-  const rangeDays = range === 'Last 7 days'
-    ? 7
-    : range === 'This year'
-      ? Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 1).getTime()) / 86_400_000) + 1
-      : 30
-  const chartData = useMemo(() => {
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - rangeDays + 1)
-    return Array.from({ length: rangeDays }, (_, index) => {
-      const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
-      const day = toDateKey(date)
-      return {
-        day: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        value: bookings.filter((booking) => booking.createdAt.slice(0, 10) === day).length,
-      }
-    })
-  }, [bookings, rangeDays, today.getFullYear(), today.getMonth(), today.getDate()])
+  const currentChartDate = new Date(`${todayKey}T00:00:00`)
+  const chartPeriods = range === 'This year'
+    ? Array.from({ length: currentChartDate.getMonth() + 1 }, (_, month) => {
+        const date = new Date(currentChartDate.getFullYear(), month, 1)
+        return {
+          key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+          label: date.toLocaleDateString('en-US', { month: 'short' }),
+        }
+      })
+    : (() => {
+        const start = range === 'This week'
+          ? new Date(currentChartDate.getFullYear(), currentChartDate.getMonth(), currentChartDate.getDate() - ((currentChartDate.getDay() + 6) % 7))
+          : new Date(currentChartDate.getFullYear(), currentChartDate.getMonth(), 1)
+        const periodCount = Math.floor((currentChartDate.getTime() - start.getTime()) / 86_400_000) + 1
+        return Array.from({ length: periodCount }, (_, index) => {
+          const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
+          return { key: toDateKey(date), label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }
+        })
+      })()
+  const periodKeyFor = (value: string) => range === 'This year' ? value.slice(0, 7) : value.slice(0, 10)
+  const bookingCounts = new Map<string, number>()
+  bookings.forEach((booking) => {
+    const key = periodKeyFor(booking.createdAt)
+    bookingCounts.set(key, (bookingCounts.get(key) ?? 0) + 1)
+  })
+  const chartData = chartPeriods.map(({ key, label }) => ({ day: label, value: bookingCounts.get(key) ?? 0 }))
   const bookingsInRange = chartData.reduce((total, item) => total + item.value, 0)
+  const revenueByPeriod = new Map<string, number>()
+  bookings.forEach((booking) => booking.payments.forEach((payment) => {
+    if (payment.status.toLowerCase() !== 'paid' || !payment.paidAt) return
+    const key = periodKeyFor(payment.paidAt)
+    revenueByPeriod.set(key, (revenueByPeriod.get(key) ?? 0) + payment.amount)
+  }))
+  roomChanges.forEach((change) => {
+    if (!change.credit_returned || !change.credit_returned_at) return
+    const key = periodKeyFor(change.credit_returned_at)
+    revenueByPeriod.set(key, (revenueByPeriod.get(key) ?? 0) - change.credit_amount)
+  })
+  const revenueChartData = chartPeriods.map(({ key, label }) => ({ day: label, value: revenueByPeriod.get(key) ?? 0 }))
+  const revenueInRange = revenueChartData.reduce((total, item) => total + item.value, 0)
 
   const updateBookingStatus = (status: BookingStatus) => {
     if (!selectedBooking) return
@@ -765,6 +796,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       phone: guest.phone ?? '',
       request: 'No special requests.',
       specialRequestNoted: false,
+      airportTransferVehicleType: null,
+      airportTransferPrice: 0,
     }
     setBookings((items) => [booking, ...items])
     pushNotification({
@@ -814,6 +847,32 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     }
 
     setNewBookingSaving(true)
+    let airportTransferPrice = 0
+    if (values.airportTransferVehicleType) {
+      const { data: transferRate, error: transferRateError } = await supabase
+        .from('transfer_rates')
+        .select('price')
+        .eq('vehicle_type', values.airportTransferVehicleType)
+        .maybeSingle()
+      if (transferRateError) {
+        console.error('Unable to verify airport transfer price for booking:', transferRateError)
+        setNewBookingError(`Unable to verify airport transfer price: ${transferRateError.message}`)
+        setNewBookingSaving(false)
+        return
+      }
+      if (!transferRate || !Number.isFinite(Number(transferRate.price)) || Number(transferRate.price) < 0) {
+        setNewBookingError('The selected airport transfer has no valid price. Update Hometel > Rates and try again.')
+        setNewBookingSaving(false)
+        return
+      }
+      if (Number(transferRate.price) !== values.airportTransferPrice) {
+        setNewBookingError('Airport transfer prices changed. Close and reopen the booking form to refresh the rates.')
+        setNewBookingSaving(false)
+        return
+      }
+      airportTransferPrice = Number(transferRate.price)
+    }
+
     const email = values.email.trim()
     const phone = values.phone.trim()
     const normalizedEmail = email.toLowerCase()
@@ -850,7 +909,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     }
 
     const nights = Math.round((new Date(`${values.checkOut}T00:00:00`).getTime() - new Date(`${values.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights
+    const totalPrice = room.rate * nights + airportTransferPrice
     const { data, error } = await supabase.from('bookings').insert({
       room_id: values.roomId,
       guest_id: guest.id,
@@ -862,6 +921,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       status: values.status,
       payment_status: 'unpaid',
       special_requests: values.specialRequests.trim() || null,
+      airport_transfer_vehicle_type: values.airportTransferVehicleType,
+      airport_transfer_price: airportTransferPrice,
     }).select('id, created_at').single()
 
     if (error) {
@@ -901,6 +962,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       phone: guest.phone ?? '',
       request: values.specialRequests.trim() || 'No special requests.',
       specialRequestNoted: false,
+      airportTransferVehicleType: values.airportTransferVehicleType,
+      airportTransferPrice,
     }
     setBookings((items) => [booking, ...items])
     pushNotification({
@@ -951,7 +1014,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
     setEditBookingSaving(true)
     const nights = Math.round((new Date(`${assignment.checkOut}T00:00:00`).getTime() - new Date(`${assignment.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights
+    const totalPrice = room.rate * nights + booking.airportTransferPrice
     const paymentStatus = booking.paid > totalPrice
       ? 'overpaid'
       : totalPrice > 0 && booking.paid >= totalPrice
@@ -1094,7 +1157,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
     setAssignmentSaving(true)
     const nights = Math.round((new Date(`${booking.checkOut}T00:00:00`).getTime() - new Date(`${booking.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights
+    const totalPrice = room.rate * nights + booking.airportTransferPrice
     const { data, error } = await supabase.rpc('change_booking_room', {
       p_booking_id: booking.id,
       p_new_room_id: roomId,
@@ -1378,22 +1441,25 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           >
             <img className="brand-mark" src="/siayanrock-logo.jpg" alt="" />
           </button>
-          {sidebarOpen && <div><strong>SiayanRock</strong><small>ADMIN</small></div>}
+          {sidebarOpen && <div><strong>Siayanrock Is.</strong><small>ADMIN</small></div>}
         </div>
         <div className="workspace-label">{sidebarOpen && 'HOMETEL'}</div>
         <nav className="nav-list" aria-label="Main navigation">
           {hometelItems.map(({ label, icon: Icon, count }) => (
             <button key={`hometel-${label}`} className={`nav-item ${activeNav === label && activeGroup === 'hometel' ? 'active' : ''}`} onClick={() => nav(label, 'hometel')} title={label}>
-              <Icon size={19} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
+              <Icon size={sidebarOpen ? 19 : 22} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
             </button>
           ))}
           {sidebarOpen && <div className="workspace-label nav-section-label">TOURS</div>}
           {tourItems.map(({ label, icon: Icon, count }) => (
             <button key={`tours-${label}`} className={`nav-item ${activeNav === label && activeGroup === 'tours' ? 'active' : ''}`} onClick={() => nav(label, 'tours')} title={label}>
-              <Icon size={19} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
+              <Icon size={sidebarOpen ? 19 : 22} strokeWidth={activeNav === label ? 2.3 : 1.8} /><span>{sidebarOpen && label}</span>{sidebarOpen && count && <em>{count}</em>}
             </button>
           ))}
         </nav>
+        <div className="sidebar-date" title={today.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}>
+          {sidebarOpen && <span>{sidebarDate}</span>}
+        </div>
       </aside>
 
       <main className="main-content">
@@ -1401,10 +1467,6 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           <button className="mobile-menu-button icon-button" onClick={() => setMobileMenu(!mobileMenu)} aria-label="Open menu"><Menu size={21} /></button>
           <div className="breadcrumb"><span>{activeGroup === 'hometel' ? 'Hometel' : 'Tours'}</span><span className="slash">/</span><strong>{activeNav}</strong></div>
           <div className="topbar-actions">
-            <span className="admin-account-email">{userEmail}</span>
-            <button className="admin-sign-out button button-secondary" type="button" onClick={async () => setAccountError((await onSignOut()) ?? '')} aria-label="Sign out">
-              <LogOut size={16} /><span>Sign out</span>
-            </button>
             <div className="notification-container">
               <button
                 className="icon-button notification-button"
@@ -1440,7 +1502,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
                   ))}</div>}
               </section>}
             </div>
-            {accountError && <div className="admin-account-error" role="alert">{accountError}</div>}
+            <AccountIndicator userEmail={userEmail} onSignOut={onSignOut} />
           </div>
           {toastNotification && <div className="notification-toast" role="status">
             <button className="notification-toast-open" onClick={() => openNotification(toastNotification)}>
@@ -1455,11 +1517,13 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
         <div className="page-content">
           {activeGroup === 'tours' ? (activeNav === 'Bookings' ? <ToursBookingsTab /> : activeNav === 'Payments' ? <ToursPaymentsTab /> : <ToursOverviewTab />) : activeNav === 'Overview' ? (
-            <HometelOverview today={today} dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} bookingsInRange={bookingsInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
+            <HometelOverview dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} revenueChartData={revenueChartData} bookingsInRange={bookingsInRange} revenueInRange={revenueInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
           ) : activeNav === 'Bookings' ? (
             <BookingsPage bookings={bookings} loadError={bookingsLoadError} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} onEditBooking={(booking) => { setEditBookingError(''); setBookingToEdit(booking) }} onDeleteBooking={(booking) => { setBookingDeleteError(''); setBookingToDelete(booking) }} onSpecialRequestNoted={setBookingSpecialRequestNoted} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
           ) : activeNav === 'Rooms' ? (
             <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onUpdateRoom={updateRoomDetails} onSetMaintenance={setRoomMaintenance} updatingRoomId={updatingRoomId} error={roomStatusError} />
+          ) : activeNav === 'Rates' ? (
+            <RatesPage />
           ) : activeNav === 'Guests' ? (
             <GuestsPage guests={guests} bookings={bookings} query={query} setQuery={setQuery} onDeleteGuest={deleteGuestAndHistory} deleteSavingId={guestDeleteSavingId} deleteError={guestDeleteError} />
           ) : activeNav === 'Payments' ? (

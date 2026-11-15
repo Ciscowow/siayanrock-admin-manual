@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { LockKeyhole } from 'lucide-react'
+import { AccountIndicator } from './AccountIndicator'
 import './AdminSignIn.css'
 
 export default function AdminSignIn({ onSignIn }: { onSignIn: (email: string, password: string) => Promise<string | null> }) {
@@ -7,6 +8,7 @@ export default function AdminSignIn({ onSignIn }: { onSignIn: (email: string, pa
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const emailInputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -25,6 +27,7 @@ export default function AdminSignIn({ onSignIn }: { onSignIn: (email: string, pa
 
   return (
     <main className="admin-sign-in-page">
+      <div className="admin-sign-in-account"><AccountIndicator onLogin={() => emailInputRef.current?.focus()} /></div>
       <section className="admin-sign-in-card">
         <img src="/siayanrock-logo.jpg" alt="SiayanRock" />
         <p className="eyebrow">SiayanRock Admin</p>
@@ -34,6 +37,7 @@ export default function AdminSignIn({ onSignIn }: { onSignIn: (email: string, pa
           <label htmlFor="admin-email">Email address</label>
           <input
             id="admin-email"
+            ref={emailInputRef}
             type="email"
             autoComplete="username"
             value={email}

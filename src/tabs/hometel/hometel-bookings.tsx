@@ -1,12 +1,82 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CalendarDays, Check, ChevronDown, CircleDollarSign, Pencil, Search, Trash2, X } from 'lucide-react'
+import { CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, LogIn, MoreVertical, Pencil, Search, Trash2, X } from 'lucide-react'
+import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate, hasSpecialRequest, statusKind, toDateKey } from '../shared'
 import { StatusBadge } from '../StatusBadge'
-import type { Booking, BookingStatus, Guest, GuestAssignment, NewBookingValues, PaymentStatus, Room } from '../types'
+import type { AirportTransferVehicleType, Booking, BookingStatus, Guest, GuestAssignment, NewBookingValues, PaymentStatus, Room } from '../types'
 import './css/hometel-bookings.css'
 
 export function BookingsPage({ bookings, loadError, query, setQuery, statusFilter, setStatusFilter, specialRequestsOnly, setSpecialRequestsOnly, onStatusChange, onManagePayment, onEditBooking, onDeleteBooking, onSpecialRequestNoted, onCreateBooking }: { bookings: Booking[]; loadError: string; query: string; setQuery: (v: string) => void; statusFilter: string; setStatusFilter: (v: string) => void; specialRequestsOnly: boolean; setSpecialRequestsOnly: (value: boolean) => void; onStatusChange: (b: Booking, status: BookingStatus) => Promise<boolean>; onManagePayment: (b: Booking) => void; onEditBooking: (booking: Booking) => void; onDeleteBooking: (booking: Booking) => void; onSpecialRequestNoted: (booking: Booking, noted: boolean) => Promise<string | null>; onCreateBooking: () => void }) {
+  const [view, setView] = useState<'all' | 'calendar'>('all')
+  const [todayDate] = useState(() => toDateKey(new Date()))
+  const [selectedDate, setSelectedDate] = useState(todayDate)
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false)
+  const [monthPickerYear, setMonthPickerYear] = useState(() => Number(todayDate.slice(0, 4)))
+  const monthPickerRef = useRef<HTMLDivElement>(null)
+  const monthPickerButtonRef = useRef<HTMLButtonElement>(null)
+  const [weekStart, setWeekStart] = useState(() => {
+    const date = new Date()
+    date.setHours(0, 0, 0, 0)
+    date.setDate(date.getDate() - (date.getDay() + 6) % 7)
+    return date
+  })
+  const changeWeek = (offset: number) => {
+    const nextSelectedDate = new Date(`${selectedDate}T00:00:00`)
+    nextSelectedDate.setDate(nextSelectedDate.getDate() + offset * 7)
+    const nextWeekStart = new Date(weekStart)
+    nextWeekStart.setDate(nextWeekStart.getDate() + offset * 7)
+    setSelectedDate(toDateKey(nextSelectedDate))
+    setWeekStart(nextWeekStart)
+  }
+  const goToToday = () => {
+    const date = new Date(`${todayDate}T00:00:00`)
+    const firstDayOfWeek = new Date(date)
+    firstDayOfWeek.setDate(firstDayOfWeek.getDate() - (firstDayOfWeek.getDay() + 6) % 7)
+    setSelectedDate(todayDate)
+    setWeekStart(firstDayOfWeek)
+  }
+  const changeMonth = (month: string) => {
+    if (!month) return
+    const firstOfMonth = new Date(`${month}-01T00:00:00`)
+    const firstWeekStart = new Date(firstOfMonth)
+    firstWeekStart.setDate(firstWeekStart.getDate() - (firstWeekStart.getDay() + 6) % 7)
+    setSelectedDate(toDateKey(firstOfMonth))
+    setWeekStart(firstWeekStart)
+  }
+  useEffect(() => {
+    if (!monthPickerOpen) return
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && !monthPickerRef.current?.contains(event.target)) setMonthPickerOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMonthPickerOpen(false)
+        monthPickerButtonRef.current?.focus()
+      }
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [monthPickerOpen])
+  const monthLabel = new Date(`${selectedDate.slice(0, 7)}-01T00:00:00`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+  const monthNames = Array.from({ length: 12 }, (_, index) =>
+    new Date(2024, index, 1).toLocaleDateString('en-PH', { month: 'long' }),
+  )
+  const weekDates = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart)
+    date.setDate(weekStart.getDate() + index)
+    return date
+  })
+  const matchesFilters = (booking: Booking) => {
+    const matchesQuery = `${booking.guest} ${booking.id} ${booking.room}`.toLowerCase().includes(query.trim().toLowerCase())
+    const matchesStatus = statusFilter === 'All statuses' || booking.status === statusFilter
+    const matchesSpecialRequests = !specialRequestsOnly || hasSpecialRequest(booking) && !booking.specialRequestNoted
+    return matchesQuery && matchesStatus && matchesSpecialRequests
+  }
   const monthGroups = useMemo(() => {
     const months = new Map<string, Booking[]>()
     bookings.forEach((booking) => {
@@ -25,48 +95,156 @@ export function BookingsPage({ bookings, loadError, query, setQuery, statusFilte
   }, [bookings])
   const visibleMonthGroups = monthGroups.map((month) => ({
     ...month,
-    bookings: month.bookings.filter((booking) => {
-      const matchesQuery = `${booking.guest} ${booking.id} ${booking.room}`.toLowerCase().includes(query.trim().toLowerCase())
-      const matchesStatus = statusFilter === 'All statuses' || booking.status === statusFilter
-      const matchesSpecialRequests = !specialRequestsOnly || hasSpecialRequest(booking) && !booking.specialRequestNoted
-      return matchesQuery && matchesStatus && matchesSpecialRequests
-    }),
+    bookings: month.bookings.filter(matchesFilters),
   })).filter((month) => month.bookings.length > 0)
   const visibleBookingCount = visibleMonthGroups.reduce((total, month) => total + month.bookings.length, 0)
+  const dateBookings = bookings.filter((booking) =>
+    booking.checkIn === selectedDate && matchesFilters(booking),
+  ).sort((left, right) => left.checkIn.localeCompare(right.checkIn) || right.createdAt.localeCompare(left.createdAt))
+  const renderBooking = (booking: Booking) => {
+    const checkInDay = String(Number(booking.checkIn.slice(8, 10)))
+    return <section className="booking-account-group" key={booking.id}>
+      <div className="booking-account-summary">
+        <span className="booking-account-day" aria-label={`Check-in day ${checkInDay}`}>{checkInDay}</span>
+        <div className="booking-account-field booking-account-person">
+          <span className="booking-account-label">Guest Name</span>
+          <span className="booking-account-value booking-account-guest">
+            <strong>{booking.guest}</strong>
+            {(booking.email || booking.phone) && <small>{booking.email || booking.phone}</small>}
+          </span>
+        </div>
+        <div className="booking-account-field">
+          <span className="booking-account-label">Room</span>
+          <span className="booking-account-value">{booking.room}</span>
+        </div>
+        <div className="booking-account-field">
+          <span className="booking-account-label">Stay dates</span>
+          <div className="booking-account-value booking-stay-dates">
+            <span><small>Check-in</small>{formatDate(booking.checkIn)}</span>
+            <span><small>Check-out</small>{formatDate(booking.checkOut)}</span>
+          </div>
+        </div>
+        <div className="booking-account-field">
+          <span className="booking-account-label">Guests</span>
+          <span className="booking-account-value">{booking.guests}</span>
+        </div>
+        <div className="booking-account-field">
+          <span className="booking-account-label">Total</span>
+          <span className="booking-account-value booking-account-total"><strong>{formatCurrency(booking.amount)}</strong></span>
+        </div>
+        <div className="booking-account-field">
+          <span className="booking-account-label">Status</span>
+          <div className="booking-account-value"><BookingStatusPill booking={booking} onChange={onStatusChange} /></div>
+        </div>
+        <div className="booking-account-field">
+          <span className="booking-account-label">Payment</span>
+          <div className="booking-account-value">
+            <button type="button" className="badge-action booking-account-payment" title="Manage booking payments" aria-label={`Manage payments for ${booking.guest}: ${booking.payment}`} onClick={() => onManagePayment(booking)}>
+              <StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge>
+            </button>
+          </div>
+        </div>
+        <BookingAccountMenu booking={booking} onEdit={() => onEditBooking(booking)} onDelete={() => onDeleteBooking(booking)} />
+      </div>
+      {hasSpecialRequest(booking) && <BookingSpecialRequest booking={booking} onNotedChange={onSpecialRequestNoted} />}
+    </section>
+  }
 
-    return <>
+  return <>
     <div className="page-heading"><div><p className="eyebrow">Hometel</p><h1>Bookings</h1><p className="subtitle">Manage reservations, guests, and stay details.</p></div><button className="button button-primary" onClick={onCreateBooking}><CalendarDays size={17} /> New booking</button></div>
     <section className="card bookings-card">
+      <div className="booking-view-tabs" aria-label="Booking view">
+        <button type="button" className={view === 'all' ? 'active' : ''} aria-pressed={view === 'all'} onClick={() => setView('all')}>All</button>
+        <button type="button" className={view === 'calendar' ? 'active' : ''} aria-pressed={view === 'calendar'} onClick={() => setView('calendar')}>Calendar</button>
+      </div>
+      {view === 'calendar' && <div className="booking-calendar">
+        <div className="booking-calendar-heading">
+          <div className="booking-calendar-month-picker" ref={monthPickerRef}>
+            <button
+              ref={monthPickerButtonRef}
+              type="button"
+              className="booking-calendar-month-trigger"
+              aria-haspopup="dialog"
+              aria-expanded={monthPickerOpen}
+              onClick={() => {
+                setMonthPickerYear(Number(selectedDate.slice(0, 4)))
+                setMonthPickerOpen((open) => !open)
+              }}
+            >
+              <strong>{monthLabel}</strong>
+              <ChevronDown size={14} aria-hidden="true" />
+            </button>
+            {monthPickerOpen && <div className="booking-month-picker-popover" role="dialog" aria-label="Choose month and year">
+              <div className="booking-month-picker-year">
+                <button type="button" className="icon-button" aria-label="Previous year" onClick={() => setMonthPickerYear((year) => year - 1)}><ChevronLeft size={17} /></button>
+                <strong>{monthPickerYear}</strong>
+                <button type="button" className="icon-button" aria-label="Next year" onClick={() => setMonthPickerYear((year) => year + 1)}><ChevronRight size={17} /></button>
+              </div>
+              <div className="booking-month-picker-grid">
+                {monthNames.map((name, index) => {
+                  const month = String(index + 1).padStart(2, '0')
+                  const isSelectedMonth = selectedDate.slice(0, 7) === `${monthPickerYear}-${month}`
+                  return <button key={month} type="button" className={isSelectedMonth ? 'active' : ''} aria-pressed={isSelectedMonth} onClick={() => {
+                    changeMonth(`${monthPickerYear}-${month}`)
+                    setMonthPickerOpen(false)
+                  }}>{name}</button>
+                })}
+              </div>
+            </div>}
+          </div>
+          <div className="booking-calendar-navigation">
+            <button type="button" className="booking-calendar-today" onClick={goToToday}>Today</button>
+            <button type="button" className="icon-button" aria-label="Previous week" onClick={() => changeWeek(-1)}><ChevronLeft size={18} /></button>
+            <button type="button" className="icon-button" aria-label="Next week" onClick={() => changeWeek(1)}><ChevronRight size={18} /></button>
+          </div>
+        </div>
+        <div className="booking-calendar-dates" aria-label="Dates in the current week">
+          {weekDates.map((date) => {
+            const dateKey = toDateKey(date)
+            const isToday = todayDate === dateKey
+            const classes = [selectedDate === dateKey ? 'active' : '', isToday ? 'today' : ''].filter(Boolean).join(' ')
+            return <button key={dateKey} type="button" className={classes} aria-label={`${date.toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric' })}${isToday ? ', today' : ''}`} aria-pressed={selectedDate === dateKey} onClick={() => setSelectedDate(dateKey)}>
+              <span>{date.toLocaleDateString('en-PH', { weekday: 'short' })}</span>
+              <strong>{date.getDate()}</strong>
+            </button>
+          })}
+        </div>
+      </div>}
       <div className="filter-bar">
         <div className="search-box"><Search size={17} /><input placeholder="Search by guest, booking ID, or room..." value={query} onChange={(e) => setQuery(e.target.value)} /></div>
         <label className="select-wrap filter-select"><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option>All statuses</option><option>Confirmed</option><option>Pending</option><option>Checked in</option><option>Completed</option><option>Cancelled</option></select><ChevronDown size={14} /></label>
         {specialRequestsOnly && <button className="filter-button" onClick={() => setSpecialRequestsOnly(false)}>Special requests only <X size={14} /></button>}
       </div>
-      <div className="table-toolbar"><span><strong>{visibleBookingCount}</strong> bookings</span></div>
+      <div className="table-toolbar"><span><strong>{view === 'all' ? visibleBookingCount : dateBookings.length}</strong> bookings{view === 'calendar' ? ` on ${new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}` : ''}</span></div>
       <div className="booking-account-list">
         {loadError && <div className="booking-load-error" role="alert">{loadError}</div>}
-        {visibleMonthGroups.map((month) => <section className="booking-month-group" key={month.key}>
+        {view === 'all' && visibleMonthGroups.map((month) => <section className="booking-month-group" key={month.key}>
           <h2 className="booking-month-heading">{month.label}</h2>
-          <div className="booking-month-bookings">{month.bookings.map((booking) => {
-            const checkInDay = String(Number(booking.checkIn.slice(8, 10)))
-            return <section className="booking-account-group" key={booking.id}>
-              <div className="booking-account-summary">
-                <span className="booking-account-day" aria-label={`Check-in day ${checkInDay}`}>{checkInDay}</span>
-                <span className="booking-account-person"><strong>{booking.guest}</strong><small>{booking.email || booking.phone || booking.guestId}</small></span>
-                <div className="booking-account-actions">
-                  <button className="button button-secondary booking-edit-button" type="button" onClick={() => onEditBooking(booking)}><Pencil size={14} /> Edit</button>
-                  <button className="button button-danger booking-delete-button" type="button" onClick={() => onDeleteBooking(booking)} aria-label={`Delete booking for ${booking.guest}`}><Trash2 size={14} /> Delete</button>
-                </div>
-              </div>
-              <div className="booking-account-details"><BookingTable bookings={[booking]} onStatusChange={onStatusChange} onManagePayment={onManagePayment} hideGuest /></div>
-              {hasSpecialRequest(booking) && <BookingSpecialRequest booking={booking} onNotedChange={onSpecialRequestNoted} />}
-            </section>
-          })}</div>
+          <BookingAccountColumns />
+          <div className="booking-month-bookings">{month.bookings.map(renderBooking)}</div>
         </section>)}
-        {!loadError && visibleBookingCount === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>Try adjusting your search or filters.</span></div>}
+        {view === 'calendar' && dateBookings.length > 0 && <div className="booking-account-calendar-group">
+          <BookingAccountColumns />
+          {dateBookings.map(renderBooking)}
+        </div>}
+        {!loadError && (view === 'all' ? visibleBookingCount : dateBookings.length) === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>{view === 'calendar' ? 'There are no bookings staying on this date.' : 'Try adjusting your search or filters.'}</span></div>}
       </div>
     </section>
   </>
+}
+
+function BookingAccountColumns() {
+  return <div className="booking-account-columns" aria-hidden="true">
+    <span />
+    <span>Guest Name</span>
+    <span>Room</span>
+    <span>Stay dates</span>
+    <span>Guests</span>
+    <span>Total</span>
+    <span>Status</span>
+    <span>Payment</span>
+    <span />
+  </div>
 }
 
 export function DeleteBookingDialog({ booking, error, saving, onClose, onConfirm }: {
@@ -123,7 +301,7 @@ export function EditBookingDialog({ booking, rooms, bookings, error, saving, onC
   })
   const selectedRoom = availableRooms.find((room) => room.id === roomId)
   const nights = Math.max(0, Math.round((new Date(`${checkOut}T00:00:00`).getTime() - new Date(`${checkIn}T00:00:00`).getTime()) / 86_400_000))
-  const totalPrice = (selectedRoom?.rate ?? 0) * nights
+  const totalPrice = (selectedRoom?.rate ?? 0) * nights + booking.airportTransferPrice
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedRoom || nights < 1) return
@@ -139,14 +317,14 @@ export function EditBookingDialog({ booking, rooms, bookings, error, saving, onC
   return <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
     <section className="assignment-dialog card" role="dialog" aria-modal="true" aria-labelledby="edit-booking-title">
       <header className="assignment-header">
-        <div><p className="eyebrow">Booking details</p><h2 id="edit-booking-title">Edit {booking.guest}'s booking</h2><p className="subtitle">Update room, stay dates, and guest count.</p></div>
+        <div><p className="eyebrow">Booking details</p><h2 id="edit-booking-title">{booking.guest}'s booking</h2></div>
         <button className="icon-button" type="button" onClick={onClose} aria-label="Close edit booking" disabled={saving}><X size={19} /></button>
       </header>
       <form className="assignment-form" onSubmit={submit}>
         <label>Room
           <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving}>
             {availableRooms.length === 0 && <option value="">No available room matches these dates and guest count</option>}
-            {availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
+            {availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
           </select>
         </label>
         <div className="assignment-date-row">
@@ -159,7 +337,7 @@ export function EditBookingDialog({ booking, rooms, bookings, error, saving, onC
         <label>Special request / notes
           <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} placeholder="Add requests or notes for this booking (optional)." disabled={saving} />
         </label>
-        <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Updated total` : 'Updated total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Updated total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
         {!selectedRoom && <p className="payment-error" role="status">No available room matches these dates and guest count.</p>}
         {error && <p className="payment-error" role="alert">{error}</p>}
         <footer className="assignment-actions">
@@ -195,8 +373,76 @@ function BookingSpecialRequest({ booking, onNotedChange }: {
   </div>
 }
 
+function BookingAccountMenu({ booking, onEdit, onDelete }: {
+  booking: Booking
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const menuRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const menuId = `booking-actions-${booking.id}`
+
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current || !popoverRef.current) return
+    const triggerRect = triggerRef.current.getBoundingClientRect()
+    const menuRect = popoverRef.current.getBoundingClientRect()
+    const edgePadding = 8
+    const top = triggerRect.bottom + menuRect.height <= window.innerHeight - edgePadding
+      ? triggerRect.bottom + 4
+      : Math.max(edgePadding, triggerRect.top - menuRect.height - 4)
+    const left = Math.max(edgePadding, Math.min(triggerRect.right - menuRect.width, window.innerWidth - menuRect.width - edgePadding))
+    setMenuPosition({ top, left })
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target) && !popoverRef.current?.contains(event.target)) setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    const closeOnViewportChange = () => setOpen(false)
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('resize', closeOnViewportChange)
+    window.addEventListener('scroll', closeOnViewportChange, true)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('resize', closeOnViewportChange)
+      window.removeEventListener('scroll', closeOnViewportChange, true)
+    }
+  }, [open])
+
+  return <div className="booking-account-menu" ref={menuRef}>
+    <button
+      ref={triggerRef}
+      type="button"
+      className="booking-account-menu-trigger"
+      aria-label={`Actions for ${booking.guest}'s booking`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      aria-controls={open ? menuId : undefined}
+      onClick={() => setOpen((current) => !current)}
+    >
+      <MoreVertical size={19} />
+    </button>
+    {open && createPortal(<div ref={popoverRef} className="booking-account-menu-items" id={menuId} role="menu" aria-label={`Booking actions for ${booking.guest}`} style={{ top: menuPosition.top, left: menuPosition.left }}>
+      <button type="button" role="menuitem" onClick={() => { setOpen(false); onEdit() }}><Pencil size={14} /> Edit</button>
+      <button type="button" role="menuitem" className="booking-account-menu-delete" onClick={() => { setOpen(false); onDelete() }}><Trash2 size={14} /> Delete</button>
+    </div>, document.body)}
+  </div>
+}
+
 export function BookingTable({ bookings, onStatusChange, onManagePayment, compact = false, hideGuest = false }: { bookings: Booking[]; onStatusChange: (b: Booking, status: BookingStatus) => Promise<boolean>; onManagePayment: (b: Booking) => void; compact?: boolean; hideGuest?: boolean }) {
-  return <div className={`table-scroll booking-table-scroll ${compact ? 'table-compact' : ''}`}><table><thead><tr>{!hideGuest && <th>Guest</th>}<th>Room</th><th>Stay dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Payment</th></tr></thead><tbody>{bookings.map((booking) => <tr key={booking.id}>{!hideGuest && <td><div className="guest-cell"><div className="avatar" style={{ background: booking.color }}>{booking.initials}</div><div><strong>{booking.guest}</strong><span>{booking.id}</span></div></div></td>}<td>{booking.room}</td><td><div className="booking-stay-dates"><span><small>Check-in</small>{formatDate(booking.checkIn)}</span><span><small>Check-out</small>{formatDate(booking.checkOut)}</span></div></td><td>{booking.guests}</td><td><strong>{formatCurrency(booking.amount)}</strong><span className="table-subtext">{formatCurrency(booking.paid)} paid</span></td><td><BookingStatusPill booking={booking} onChange={onStatusChange} /></td><td><button type="button" className="badge-action booking-payment-action" title="Manage booking payments" aria-label={`Manage payments for ${booking.guest}: ${booking.payment}`} onClick={() => onManagePayment(booking)}><StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge></button></td></tr>)}</tbody></table>{bookings.length === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>Try adjusting your search or filters.</span></div>}</div>
+  return <div className={`table-scroll booking-table-scroll ${compact ? 'table-compact' : ''}`}><table><thead><tr>{!hideGuest && <th>Guest Name</th>}<th>Room</th><th>Stay dates</th><th>Guests</th><th>Total</th><th>Status</th><th>Payment</th></tr></thead><tbody>{bookings.map((booking) => <tr key={booking.id}>{!hideGuest && <td><div className="guest-cell"><div className="avatar" style={{ background: booking.color }}>{booking.initials}</div><div><strong>{booking.guest}</strong><span>{booking.id}</span></div></div></td>}<td>{booking.room}</td><td><div className="booking-stay-dates"><span><small>Check-in</small>{formatDate(booking.checkIn)}</span><span><small>Check-out</small>{formatDate(booking.checkOut)}</span></div></td><td>{booking.guests}</td><td><strong>{formatCurrency(booking.amount)}</strong><span className="table-subtext">{formatCurrency(booking.paid)} paid</span></td><td><BookingStatusPill booking={booking} onChange={onStatusChange} /></td><td><button type="button" className="badge-action booking-payment-action" title="Manage booking payments" aria-label={`Manage payments for ${booking.guest}: ${booking.payment}`} onClick={() => onManagePayment(booking)}><StatusBadge kind={statusKind(booking.payment)}>{booking.payment}</StatusBadge></button></td></tr>)}</tbody></table>{bookings.length === 0 && <div className="empty-state"><Search size={25} /><strong>No bookings found</strong><span>Try adjusting your search or filters.</span></div>}</div>
 }
 
 function BookingStatusPill({ booking, onChange }: { booking: Booking; onChange: (booking: Booking, status: BookingStatus) => Promise<boolean> }) {
@@ -208,6 +454,15 @@ function BookingStatusPill({ booking, onChange }: { booking: Booking; onChange: 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuId = `booking-status-menu-${booking.id}`
+  const StatusIcon = booking.status === 'Pending'
+    ? Clock3
+    : booking.status === 'Confirmed'
+      ? CheckCircle2
+      : booking.status === 'Checked in'
+        ? LogIn
+        : booking.status === 'Completed'
+          ? Check
+          : X
 
   useLayoutEffect(() => {
     if (!open || !triggerRef.current || !menuRef.current) return
@@ -269,6 +524,7 @@ function BookingStatusPill({ booking, onChange }: { booking: Booking; onChange: 
       onClick={() => setOpen((current) => !current)}
       disabled={saving}
     >
+      <StatusIcon size={14} aria-hidden="true" />
       <span>{booking.status}</span>
       <ChevronDown size={12} aria-hidden="true" />
     </button>
@@ -277,11 +533,16 @@ function BookingStatusPill({ booking, onChange }: { booking: Booking; onChange: 
         <button
           key={status}
           type="button"
-          className={`booking-status-option ${status === booking.status ? 'is-current' : ''}`}
+          className={`booking-status-option badge-${statusKind(status)} ${status === booking.status ? 'is-current' : ''}`}
           aria-pressed={status === booking.status}
           disabled={saving}
           onClick={() => void handleChange(status)}
         >
+          {status === 'Pending' ? <Clock3 size={15} aria-hidden="true" />
+            : status === 'Confirmed' ? <CheckCircle2 size={15} aria-hidden="true" />
+              : status === 'Checked in' ? <LogIn size={15} aria-hidden="true" />
+                : status === 'Completed' ? <Check size={15} aria-hidden="true" />
+                  : <X size={15} aria-hidden="true" />}
           <span>{status}</span>
         </button>
       ))}
@@ -386,9 +647,9 @@ export function BookingDrawer({ booking, onClose, onStatusChange, onAddPayment, 
 
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer" onClick={(event) => event.stopPropagation()}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="booking-drawer-title" onClick={(event) => event.stopPropagation()}>
         <div className="drawer-header">
-          <div><p className="eyebrow">Booking {booking.id}</p><h2>{booking.guest}</h2></div>
+          <div><p className="eyebrow">Booking {booking.id}</p><h2 id="booking-drawer-title">{booking.guest}</h2></div>
           <button className="icon-button close-button" onClick={onClose} aria-label="Close booking details"><X size={20} /></button>
         </div>
         <div className="drawer-body">
@@ -400,6 +661,7 @@ export function BookingDrawer({ booking, onClose, onStatusChange, onAddPayment, 
               <div><span>Guests</span><strong>{booking.guests} guests</strong></div>
               <div><span>Check-in</span><strong>{formatDate(booking.checkIn)}</strong></div>
               <div><span>Check-out</span><strong>{formatDate(booking.checkOut)}</strong></div>
+              <div><span>Airport transfer</span><strong>{booking.airportTransferVehicleType ? `${booking.airportTransferVehicleType === 'van' ? 'Van' : 'Tricycle'} · ${formatCurrency(booking.airportTransferPrice)}` : 'Not requested'}</strong></div>
             </div>
           </div>
           <div className="detail-section">
@@ -508,7 +770,7 @@ export function GuestAssignmentDialog({ guest, rooms, bookings, error, saving, o
       <form className="assignment-form" onSubmit={submitAssignment}>
         <label>Room
           <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving || availableRooms.length === 0}>
-            {availableRooms.length === 0 ? <option value="">No rooms available for these dates</option> : availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
+            {availableRooms.length === 0 ? <option value="">No rooms available for these dates</option> : availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
           </select>
         </label>
         <div className="assignment-date-row">
@@ -551,6 +813,49 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
   const [guestCount, setGuestCount] = useState('1')
   const [specialRequests, setSpecialRequests] = useState('')
   const [status, setStatus] = useState<'pending' | 'confirmed'>('confirmed')
+  const [airportTransferVehicleType, setAirportTransferVehicleType] = useState<AirportTransferVehicleType | null>(null)
+  const [transferRates, setTransferRates] = useState<Record<AirportTransferVehicleType, number> | null>(null)
+  const [transferRatesLoading, setTransferRatesLoading] = useState(true)
+  const [transferRatesError, setTransferRatesError] = useState('')
+  useEffect(() => {
+    let isMounted = true
+    const loadTransferRates = async () => {
+      const { data, error } = await supabase.from('transfer_rates').select('vehicle_type, price')
+      if (error) {
+        console.error('Unable to load airport transfer prices for booking:', error)
+        if (isMounted) {
+          setTransferRatesError(`Unable to load airport transfer prices: ${error.message}`)
+          setTransferRatesLoading(false)
+        }
+        return
+      }
+
+      const rates = new Map<string, number>()
+      data.forEach((rate) => {
+        const vehicleType = String(rate.vehicle_type).trim().toLowerCase()
+        if (!rates.has(vehicleType) || rate.vehicle_type === vehicleType) {
+          rates.set(vehicleType, Number(rate.price))
+        }
+      })
+      const van = rates.get('van')
+      const tricycle = rates.get('tricycle')
+      if (van === undefined || tricycle === undefined || !Number.isFinite(Number(van)) || !Number.isFinite(Number(tricycle)) || Number(van) < 0 || Number(tricycle) < 0) {
+        if (isMounted) {
+          setTransferRatesError('Set valid Van and Tricycle prices in Hometel > Rates before offering airport transfers.')
+          setTransferRatesLoading(false)
+        }
+        return
+      }
+
+      if (isMounted) {
+        setTransferRates({ van: Number(van), tricycle: Number(tricycle) })
+        setTransferRatesLoading(false)
+      }
+    }
+
+    void loadTransferRates()
+    return () => { isMounted = false }
+  }, [])
   const normalizedEmail = email.trim().toLowerCase()
   const normalizedPhone = phone.replace(/\D/g, '')
   const matchingGuest = guests.find((guest) =>
@@ -581,7 +886,10 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
 
   const selectedRoom = availableRooms.find((room) => room.id === roomId)
   const nights = Math.max(0, Math.round((new Date(`${checkOut}T00:00:00`).getTime() - new Date(`${checkIn}T00:00:00`).getTime()) / 86_400_000))
-  const totalPrice = (selectedRoom?.rate ?? 0) * nights
+  const transferPrice = airportTransferVehicleType && transferRates
+    ? transferRates[airportTransferVehicleType]
+    : 0
+  const totalPrice = (selectedRoom?.rate ?? 0) * nights + transferPrice
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedRoom) return
@@ -595,13 +903,15 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
       guestCount: Number(guestCount),
       specialRequests,
       status,
+      airportTransferVehicleType,
+      airportTransferPrice: transferPrice,
     })
   }
 
   return <div className="assignment-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
     <section className="assignment-dialog card" role="dialog" aria-modal="true" aria-labelledby="new-booking-title">
       <header className="assignment-header">
-        <div><p className="eyebrow">Hometel reservation</p><h2 id="new-booking-title">Create a booking</h2><p className="subtitle">Add guest details and reserve an available room.</p></div>
+        <div><p className="eyebrow">Hometel reservation</p><h2 id="new-booking-title">Create a booking</h2></div>
         <button className="icon-button" onClick={onClose} aria-label="Close new booking" disabled={saving}><X size={19} /></button>
       </header>
       <form className="assignment-form" onSubmit={submit}>
@@ -619,7 +929,7 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
         {matchingGuest && <p className="room-change-note">Existing guest record will be used: <strong>{matchingGuest.full_name}</strong>.</p>}
         <label>Room
           <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving || availableRooms.length === 0}>
-            {availableRooms.length === 0 ? <option value="">No rooms available for these dates</option> : availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
+            {availableRooms.length === 0 ? <option value="">No rooms available for these dates</option> : availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
           </select>
         </label>
         <div className="assignment-date-row">
@@ -644,10 +954,25 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
             </select>
           </label>
         </div>
+        <label className="airport-transfer-option">
+          <input type="checkbox" checked={airportTransferVehicleType !== null} onChange={(event) => setAirportTransferVehicleType(event.target.checked ? 'van' : null)} disabled={saving || transferRatesLoading || !transferRates} />
+          <span>Guest will avail of airport transfer</span>
+        </label>
+        {transferRatesLoading && <p className="room-change-note" role="status">Loading airport transfer prices…</p>}
+        {transferRatesError && <p className="payment-error" role="alert">{transferRatesError}</p>}
+        {airportTransferVehicleType && transferRates && <label>Airport transfer vehicle
+          <select value={airportTransferVehicleType} onChange={(event) => {
+            const vehicleType = event.target.value
+            if (vehicleType === 'van' || vehicleType === 'tricycle') setAirportTransferVehicleType(vehicleType)
+          }} disabled={saving}>
+            <option value="van">Van · {formatCurrency(transferRates.van)}</option>
+            <option value="tricycle">Tricycle · {formatCurrency(transferRates.tricycle)}</option>
+          </select>
+        </label>}
         <label><span className="assignment-label-title">Special requests <span>(optional)</span></span>
           <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} disabled={saving} />
         </label>
-        <div className="assignment-total"><span>Booking total</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        <div className="assignment-total"><span>{airportTransferVehicleType ? `Room stay + ${airportTransferVehicleType} airport transfer` : 'Booking total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
         {!selectedRoom && <p className="payment-error" role="status">No active room is available for the selected stay dates.</p>}
         {error && <p className="payment-error" role="alert">{error}</p>}
         <footer className="assignment-actions">
@@ -694,7 +1019,7 @@ export function RoomChangeDialog({ guest, rooms, bookings, setupError, error, sa
   const nights = booking
     ? Math.max(0, Math.round((new Date(`${booking.checkOut}T00:00:00`).getTime() - new Date(`${booking.checkIn}T00:00:00`).getTime()) / 86_400_000))
     : 0
-  const newTotal = (selectedRoom?.rate ?? 0) * nights
+  const newTotal = (selectedRoom?.rate ?? 0) * nights + (booking?.airportTransferPrice ?? 0)
   const displayedTotal = booking ? selectedRoom ? newTotal : booking.amount : 0
   const displayedBalance = booking ? Math.max(0, displayedTotal - booking.paid) : 0
   const displayedOverpayment = booking ? Math.max(0, booking.paid - displayedTotal) : 0
@@ -730,10 +1055,10 @@ export function RoomChangeDialog({ guest, rooms, bookings, setupError, error, sa
           <label>New room
             <select value={roomId} onChange={(event) => setRoomId(event.target.value)} required disabled={saving || availableRooms.length === 0}>
               <option value="">{availableRooms.length === 0 ? 'No other room available for these dates' : 'Select an available room'}</option>
-              {availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {room.type} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
+              {availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
             </select>
           </label>
-          <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'} · Updated total` : 'Current booking total'}</span><strong>{formatCurrency(displayedTotal)}</strong></div>
+          <div className="assignment-total"><span>{selectedRoom ? `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Current booking total'}</span><strong>{formatCurrency(displayedTotal)}</strong></div>
           <div className="room-change-payment">
             <div><span>Previously paid</span><strong>{formatCurrency(booking.paid)}</strong></div>
             <div><span>Remaining balance</span><strong>{formatCurrency(displayedBalance)}</strong></div>
