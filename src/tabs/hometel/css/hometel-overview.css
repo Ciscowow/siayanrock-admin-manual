@@ -34,6 +34,7 @@
 .attention-copy span { color:#a29a93; font-size:11px; margin-top:3px; }
 .attention-item b { font-size:15px; font-weight:600; }
 .attention-arrow { color:#bab2aa; }
+.attention-empty { margin:20px 0 0; color:#8c867f; font-size:13px; }
 .text-button { border:0; background:none; color:var(--accent); display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; padding:0; }
 .action-card .text-button { margin-top:15px; }
 .recent-card .card-heading { margin-bottom:17px; }
@@ -61,6 +62,22 @@
 .metric-popup-meta strong { color:var(--ink); font-size:13px; }
 .metric-popup-footer { display:flex; justify-content:flex-end; padding:14px 25px; border-top:1px solid var(--line); }
 .metric-popup:focus { outline:none; }
+.attention-popup { width:min(680px,100%); }
+.attention-popup-content { padding-top:0; padding-bottom:0; }
+.attention-popup-section { padding:16px 0; border-bottom:1px solid #f0ede9; }
+.attention-popup-section:last-child { border-bottom:0; }
+.attention-popup-section > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.attention-popup-section h3 { display:flex; align-items:center; gap:8px; margin:0; color:var(--ink); font-size:14px; font-weight:600; }
+.attention-popup-section h3 > svg { color:var(--accent); }
+.attention-popup-section h3 > span { color:var(--muted); font-size:12px; font-weight:500; }
+.attention-popup-list { display:grid; }
+.attention-popup-entry { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 0; border-top:1px solid #f6f3ef; }
+.attention-popup-entry > div { min-width:0; }
+.attention-popup-entry strong,.attention-popup-entry span { display:block; }
+.attention-popup-entry strong { color:var(--ink); font-size:13px; font-weight:600; }
+.attention-popup-entry span,.attention-popup-entry p { margin:3px 0 0; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.attention-popup-entry > b { flex-shrink:0; color:var(--ink); font-size:13px; }
+.attention-popup-loading { padding:18px 0; color:var(--muted); font-size:13px; }
 .eyebrow,.workspace-label,.brand small,.metric-change,.card-heading p,.attention-copy span,.text-button,.table-subtext,.room-number,.room-type,.room-card-current-guest small,.payment-error,.payment-success { font-size:13px; }
 .help-card strong,.subtitle,.button,.metric-card p,.attention-copy strong,.badge,.filter-button,.search-box input,.select-wrap select,.table-scroll td,.payment-entry label,.assignment-form label,.room-editor-form label,.room-maintenance-field,.payment-transaction-meta > span { font-size:15px; }
 .help-card span,.help-card button,.metric-popup-meta,.table-scroll th,.payment-view-button,.payment-status-summary,.guest-detail span,.room-meta,.room-maintenance-current-note { font-size:14px; }

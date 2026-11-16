@@ -27,6 +27,10 @@ export type Booking = {
   specialRequestNoted: boolean
   airportTransferVehicleType: AirportTransferVehicleType | null
   airportTransferPrice: number
+  tourPromoId?: number | null
+  tourPromoPrice?: number | null
+  tourPromoWithLunch?: boolean | null
+  tourPackagePrice?: number | null
 }
 
 export type Room = {
@@ -68,6 +72,10 @@ export type SupabaseBooking = {
   special_requests_noted?: boolean | null
   airport_transfer_vehicle_type?: AirportTransferVehicleType | null
   airport_transfer_price?: number | string | null
+  tour_promo_id?: number | null
+  tour_promo_price?: number | string | null
+  tour_promo_with_lunch?: boolean | null
+  tour_package_price?: number | string | null
   guests: { full_name: string; email: string | null; phone: string | null } | null
   rooms: { room_name: string; room_number: string | null } | null
   payments: { id?: string; amount: number | string; payment_status: string | null; paid_at: string | null; payment_method: string | null; payment_type: string | null }[] | null
@@ -142,6 +150,8 @@ export type NewBookingValues = {
   status: 'pending' | 'confirmed'
   airportTransferVehicleType: AirportTransferVehicleType | null
   airportTransferPrice: number
+  tourPromo: { id: number; price: number; withLunch: boolean } | null
+  tourPackagePrice: number | null
 }
 
 export type RoomChangeRecord = {

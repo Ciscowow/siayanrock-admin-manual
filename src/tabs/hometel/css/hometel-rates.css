@@ -1,15 +1,25 @@
-.transfer-prices-card { width:min(520px,100%); margin-top:18px; padding:24px; }
-.transfer-prices-card header { margin-bottom:18px; }
-.transfer-prices-card .eyebrow { margin-bottom:5px; }
-.transfer-prices-card h2 { margin:0; color:#332d27; font-size:18px; font-weight:600; }
-.transfer-prices-card form { display:grid; gap:18px; }
+.tour-promos-card, .transfer-prices-card { width:min(720px,100%); margin-top:18px; padding:24px; }
+.tour-promos-card header, .transfer-prices-card header { margin-bottom:18px; }
+.tour-promos-card .eyebrow, .transfer-prices-card .eyebrow { margin-bottom:5px; }
+.tour-promos-card h2, .transfer-prices-card h2 { margin:0; color:#332d27; font-size:18px; font-weight:600; }
+.tour-promos-card form, .transfer-prices-card form { display:grid; gap:18px; }
+.tour-promo-table { display:grid; gap:8px; }
+.tour-promo-header-row, .tour-promo-row { display:grid; grid-template-columns: minmax(110px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr); gap:12px; align-items:stretch; }
+.tour-promo-header-row { padding:0 0 8px; color:#51483f; font-size:12px; font-weight:600; border-bottom:1px solid var(--line); }
+.tour-promo-row { padding:10px 0; border-bottom:1px solid var(--line); }
+.tour-promo-row:last-child { border-bottom:none; }
+.tour-promo-duration { display:flex; flex-direction:column; justify-content:center; color:#332d27; }
+.tour-promo-duration span { font-weight:600; }
+.tour-promo-duration small { color:#817970; }
+.tour-promo-cell { display:flex; align-items:center; gap:8px; }
+.tour-promo-currency { color:#817970; }
+.tour-promo-cell input, .transfer-price-row input { box-sizing:border-box; width:100%; min-width:0; height:42px; border:1px solid var(--line); border-radius:7px; background:#fff; padding:8px 11px; color:#332d27; font:inherit; font-size:14px; }
+.tour-promo-cell input:disabled, .transfer-price-row input:disabled { background:#faf8f5; color:#817970; }
 .transfer-price-rows { display:grid; gap:10px; }
 .transfer-price-row { display:grid; grid-template-columns:24px minmax(0,1fr) 15px minmax(100px,124px); align-items:center; gap:10px; color:#51483f; font-size:14px; }
 .transfer-price-row svg { color:#80644f; }
 .transfer-price-currency { color:#817970; text-align:center; }
-.transfer-price-row input { box-sizing:border-box; width:100%; min-width:0; height:42px; border:1px solid var(--line); border-radius:7px; background:#fff; padding:8px 11px; color:#332d27; font:inherit; font-size:14px; }
-.transfer-price-row input:disabled { background:#faf8f5; color:#817970; }
 .transfer-prices-error { margin:0; color:var(--red); font-size:12px; line-height:1.45; }
-.transfer-prices-card footer { display:flex; align-items:center; justify-content:space-between; gap:14px; padding-top:14px; border-top:1px solid var(--line); color:#817970; font-size:12px; }
-.transfer-prices-card footer .button { min-height:42px; }
-@media (max-width:480px) { .transfer-prices-card { padding:18px; }.transfer-price-row { grid-template-columns:22px minmax(0,1fr) 14px minmax(88px,110px); gap:8px; }.transfer-prices-card footer { align-items:flex-start; flex-direction:column; }.transfer-prices-card footer .button { align-self:flex-end; } }
+.tour-promos-card footer, .transfer-prices-card footer { display:flex; align-items:center; justify-content:space-between; gap:14px; padding-top:14px; border-top:1px solid var(--line); color:#817970; font-size:12px; }
+.tour-promos-card footer .button, .transfer-prices-card footer .button { min-height:42px; }
+@media (max-width:480px) { .tour-promos-card, .transfer-prices-card { padding:18px; } .tour-promo-header-row, .tour-promo-row { grid-template-columns:1fr; gap:8px; } .tour-promo-header-row { display:none; } .tour-promo-duration { flex-direction:row; align-items:center; justify-content:space-between; } .transfer-price-row { grid-template-columns:22px minmax(0,1fr) 14px minmax(88px,110px); gap:8px; }.tour-promos-card footer, .transfer-prices-card footer { align-items:flex-start; flex-direction:column; }.tour-promos-card footer .button, .transfer-prices-card footer .button { align-self:flex-end; } }
