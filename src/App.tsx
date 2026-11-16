@@ -218,6 +218,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
             specialRequestNoted: Boolean(record.special_requests_noted),
             airportTransferVehicleType: record.airport_transfer_vehicle_type ?? null,
             airportTransferPrice: Number(record.airport_transfer_price ?? 0),
+            tourPromoId: record.tour_promo_id ?? null,
+            tourPromoPrice: record.tour_promo_price === null || record.tour_promo_price === undefined ? null : Number(record.tour_promo_price),
+            tourPromoWithLunch: record.tour_promo_with_lunch ?? null,
           }
         })
 
@@ -298,6 +301,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           special_requests_noted?: boolean | null
           airport_transfer_vehicle_type?: AirportTransferVehicleType | null
           airport_transfer_price?: number | string | null
+          tour_promo_id?: number | null
+          tour_promo_price?: number | string | null
+          tour_promo_with_lunch?: boolean | null
           created_at?: string
         }
         if (!booking.id) return
@@ -346,6 +352,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
             specialRequestNoted: Boolean(booking.special_requests_noted),
             airportTransferVehicleType: booking.airport_transfer_vehicle_type ?? null,
             airportTransferPrice: Number(booking.airport_transfer_price ?? 0),
+            tourPromoId: booking.tour_promo_id ?? null,
+            tourPromoPrice: booking.tour_promo_price === null || booking.tour_promo_price === undefined ? null : Number(booking.tour_promo_price),
+            tourPromoWithLunch: booking.tour_promo_with_lunch ?? null,
           }
           setBookings((items) => items.some((item) => item.id === liveBooking.id) ? items : [liveBooking, ...items])
           pushNotification({
@@ -846,8 +855,12 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       return
     }
 
+    const nights = Math.round((new Date(`${values.checkOut}T00:00:00`).getTime() - new Date(`${values.checkIn}T00:00:00`).getTime()) / 86_400_000)
     setNewBookingSaving(true)
     let airportTransferPrice = 0
+    let tourPromoId: number | null = null
+    let tourPromoPrice: number | null = null
+    let tourPromoWithLunch: boolean | null = null
     if (values.airportTransferVehicleType) {
       const { data: transferRate, error: transferRateError } = await supabase
         .from('transfer_rates')
@@ -871,6 +884,48 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
         return
       }
       airportTransferPrice = Number(transferRate.price)
+    }
+
+    if (values.tourPromo) {
+      if (values.guestCount !== 2) {
+        setNewBookingError('Tour promos are available for bookings of exactly 2 guests.')
+        setNewBookingSaving(false)
+        return
+      }
+
+      const { data: promo, error: promoError } = await supabase
+        .from('tour_promos')
+        .select('id, max_pax, nights, price_with_lunch, price_without_lunch, starts_on, ends_on, active')
+        .eq('id', values.tourPromo.id)
+        .eq('active', true)
+        .eq('max_pax', 2)
+        .eq('nights', nights)
+        .maybeSingle()
+
+      if (promoError) {
+        console.error('Unable to verify tour promo for booking:', promoError)
+        setNewBookingError(`Unable to verify tour promo: ${promoError.message}`)
+        setNewBookingSaving(false)
+        return
+      }
+
+      const promoPrice = promo
+        ? Number(values.tourPromo.withLunch ? promo.price_with_lunch : promo.price_without_lunch)
+        : Number.NaN
+      if (!promo || promo.starts_on && values.checkIn < promo.starts_on || promo.ends_on && values.checkIn > promo.ends_on || !Number.isFinite(promoPrice) || promoPrice < 0) {
+        setNewBookingError('The selected tour promo is no longer available for these stay dates. Refresh the booking form and try again.')
+        setNewBookingSaving(false)
+        return
+      }
+      if (promoPrice !== values.tourPromo.price) {
+        setNewBookingError('Tour promo prices changed. Close and reopen the booking form to refresh the rates.')
+        setNewBookingSaving(false)
+        return
+      }
+
+      tourPromoId = Number(promo.id)
+      tourPromoPrice = promoPrice
+      tourPromoWithLunch = values.tourPromo.withLunch
     }
 
     const email = values.email.trim()
@@ -908,8 +963,7 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       setGuests((items) => [savedGuest, ...items])
     }
 
-    const nights = Math.round((new Date(`${values.checkOut}T00:00:00`).getTime() - new Date(`${values.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights + airportTransferPrice
+    const totalPrice = (tourPromoPrice ?? room.rate * nights) + airportTransferPrice
     const { data, error } = await supabase.from('bookings').insert({
       room_id: values.roomId,
       guest_id: guest.id,
@@ -923,6 +977,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       special_requests: values.specialRequests.trim() || null,
       airport_transfer_vehicle_type: values.airportTransferVehicleType,
       airport_transfer_price: airportTransferPrice,
+      tour_promo_id: tourPromoId,
+      tour_promo_price: tourPromoPrice,
+      tour_promo_with_lunch: tourPromoWithLunch,
     }).select('id, created_at').single()
 
     if (error) {
@@ -964,6 +1021,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       specialRequestNoted: false,
       airportTransferVehicleType: values.airportTransferVehicleType,
       airportTransferPrice,
+      tourPromoId,
+      tourPromoPrice,
+      tourPromoWithLunch,
     }
     setBookings((items) => [booking, ...items])
     pushNotification({
@@ -1014,7 +1074,14 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
 
     setEditBookingSaving(true)
     const nights = Math.round((new Date(`${assignment.checkOut}T00:00:00`).getTime() - new Date(`${assignment.checkIn}T00:00:00`).getTime()) / 86_400_000)
-    const totalPrice = room.rate * nights + booking.airportTransferPrice
+    const tourPromoPrice = booking.tourPromoPrice != null &&
+      assignment.guestCount === 2 &&
+      assignment.checkIn === booking.checkIn &&
+      assignment.checkOut === booking.checkOut
+      ? booking.tourPromoPrice
+      : null
+    const keepTourPromo = tourPromoPrice !== null
+    const totalPrice = (tourPromoPrice ?? room.rate * nights) + booking.airportTransferPrice
     const paymentStatus = booking.paid > totalPrice
       ? 'overpaid'
       : totalPrice > 0 && booking.paid >= totalPrice
@@ -1033,6 +1100,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       check_out: assignment.checkOut,
       num_of_guests: assignment.guestCount,
       total_price: totalPrice,
+      tour_promo_id: keepTourPromo ? booking.tourPromoId ?? null : null,
+      tour_promo_price: tourPromoPrice,
+      tour_promo_with_lunch: keepTourPromo ? booking.tourPromoWithLunch ?? null : null,
       payment_status: paymentStatus,
       special_requests: specialRequests || null,
       special_requests_noted: specialRequestNoted,
@@ -1059,6 +1129,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
       checkOut: assignment.checkOut,
       guests: assignment.guestCount,
       amount: totalPrice,
+      tourPromoId: keepTourPromo ? booking.tourPromoId ?? null : null,
+      tourPromoPrice,
+      tourPromoWithLunch: keepTourPromo ? booking.tourPromoWithLunch ?? null : null,
       request: specialRequests || 'No special requests.',
       specialRequestNoted,
       payment: paymentStatus === 'overpaid' ? 'Overpaid' : paymentStatus === 'paid' ? 'Paid' : paymentStatus === 'partial' ? 'Partial' : 'Unpaid',
