@@ -31,7 +31,7 @@ export default function AdminSignIn({ onSignIn }: { onSignIn: (email: string, pa
       <section className="admin-sign-in-card">
         <img src="/siayanrock-logo.jpg" alt="SiayanRock" />
         <p className="eyebrow">SiayanRock Admin</p>
-        <h1>Welcome back</h1>
+        <h1>Welcome back!</h1>
         <p className="admin-sign-in-description">Sign in with your administrator account to continue.</p>
         <form onSubmit={(event) => void handleSubmit(event)}>
           <label htmlFor="admin-email">Email address</label>
