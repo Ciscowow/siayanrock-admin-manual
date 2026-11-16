@@ -317,7 +317,12 @@ export function EditBookingDialog({ booking, rooms, bookings, error, saving, onC
     checkOut === booking.checkOut
     ? booking.tourPromoPrice
     : null
-  const totalPrice = (tourPromoPrice ?? (selectedRoom?.rate ?? 0) * nights) + booking.airportTransferPrice
+  const tourPackagePrice = booking.tourPackagePrice != null &&
+    Number(guestCount) === booking.guests &&
+    tourPromoPrice === null
+    ? booking.tourPackagePrice
+    : null
+  const totalPrice = (tourPromoPrice ?? (selectedRoom?.rate ?? 0) * nights) + (tourPackagePrice ?? 0) + booking.airportTransferPrice
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedRoom || nights < 1) return
@@ -353,7 +358,7 @@ export function EditBookingDialog({ booking, rooms, bookings, error, saving, onC
         <label>Special request / notes
           <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} placeholder="Add requests or notes for this booking (optional)." disabled={saving} />
         </label>
-        <div className="assignment-total"><span>{selectedRoom ? `${tourPromoPrice !== null ? `Tour promo (${booking.tourPromoWithLunch ? 'with lunch' : 'without lunch'})` : `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}`}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Updated total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        <div className="assignment-total"><span>{selectedRoom ? `${tourPromoPrice !== null ? `Tour promo (${booking.tourPromoWithLunch ? 'with lunch' : 'without lunch'})` : `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}${tourPackagePrice !== null ? ' + tour package' : ''}`}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Updated total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
         {!selectedRoom && <p className="payment-error" role="status">No available room matches these dates and guest count.</p>}
         {error && <p className="payment-error" role="alert">{error}</p>}
         <footer className="assignment-actions">
@@ -677,6 +682,7 @@ export function BookingDrawer({ booking, onClose, onStatusChange, onAddPayment, 
               <div><span>Guests</span><strong>{booking.guests} guests</strong></div>
               <div><span>Check-in</span><strong>{formatDate(booking.checkIn)}</strong></div>
               <div><span>Check-out</span><strong>{formatDate(booking.checkOut)}</strong></div>
+              <div><span>Tour package</span><strong>{booking.tourPackagePrice != null ? formatCurrency(booking.tourPackagePrice) : 'Not requested'}</strong></div>
               <div><span>Tour promo</span><strong>{booking.tourPromoPrice != null ? `2 pax · ${booking.tourPromoWithLunch ? 'with lunch' : 'without lunch'} · ${formatCurrency(booking.tourPromoPrice)}` : 'Not requested'}</strong></div>
               <div><span>Airport transfer</span><strong>{booking.airportTransferVehicleType ? `${booking.airportTransferVehicleType === 'van' ? 'Van' : 'Tricycle'} · ${formatCurrency(booking.airportTransferPrice)}` : 'Not requested'}</strong></div>
             </div>
@@ -839,6 +845,8 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
   const [tourPromosError, setTourPromosError] = useState('')
   const [tourPromoSelection, setTourPromoSelection] = useState<{ id: number; checkIn: string; checkOut: string } | null>(null)
   const [tourPromoWithLunch, setTourPromoWithLunch] = useState(true)
+  const [tourPackageSelected, setTourPackageSelected] = useState(false)
+  const [tourPackagePriceInput, setTourPackagePriceInput] = useState('')
   useEffect(() => {
     let isMounted = true
     const loadTourPromos = async () => {
@@ -956,10 +964,16 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
   const tourPromoPrice = selectedTourPromo
     ? (tourPromoWithLunch ? selectedTourPromo.price_with_lunch : selectedTourPromo.price_without_lunch)
     : 0
+  const tourPackagePrice = tourPackageSelected && tourPackagePriceInput.trim() !== ''
+    ? Number(tourPackagePriceInput)
+    : 0
+  const tourPackagePriceValid = !tourPackageSelected ||
+    (tourPackagePriceInput.trim() !== '' && Number.isFinite(tourPackagePrice) && tourPackagePrice >= 0)
+  const canSelectTourPackage = Number(guestCount) >= 1 && Number(guestCount) <= 11
   const transferPrice = airportTransferVehicleType && transferRates
     ? transferRates[airportTransferVehicleType]
     : 0
-  const totalPrice = (selectedTourPromo ? tourPromoPrice : (selectedRoom?.rate ?? 0) * nights) + transferPrice
+  const totalPrice = (selectedTourPromo ? tourPromoPrice : (selectedRoom?.rate ?? 0) * nights) + tourPackagePrice + transferPrice
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedRoom) return
@@ -975,6 +989,7 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
       status,
       airportTransferVehicleType,
       airportTransferPrice: transferPrice,
+      tourPackagePrice: tourPackageSelected ? Number(tourPackagePriceInput) : null,
       tourPromo: selectedTourPromo ? {
         id: selectedTourPromo.id,
         price: tourPromoPrice,
@@ -1017,7 +1032,15 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
         </div>
         <div className="assignment-date-row">
           <label>Number of guests
-            <input type="number" min="1" max={selectedRoom?.capacity ?? undefined} value={guestCount} onChange={(event) => setGuestCount(event.target.value)} required disabled={saving || !selectedRoom} />
+            <input type="number" min="1" max={selectedRoom?.capacity ?? undefined} value={guestCount} onChange={(event) => {
+              const nextGuestCount = event.target.value
+              setGuestCount(nextGuestCount)
+              if (Number(nextGuestCount) !== 2) setTourPromoSelection(null)
+              if (tourPackageSelected) {
+                setTourPackageSelected(false)
+                setTourPackagePriceInput('')
+              }
+            }} required disabled={saving || !selectedRoom} />
           </label>
           <label>Booking status
             <select value={status} onChange={(event) => {
@@ -1029,59 +1052,101 @@ export function NewBookingDialog({ rooms, guests, bookings, error, saving, onClo
             </select>
           </label>
         </div>
-        {Number(guestCount) === 2 && <section className="tour-promo-booking-option" aria-label="Tour promo option">
-          <label className="airport-transfer-option">
-            <input
-              type="checkbox"
-              checked={selectedTourPromo !== null}
-              onChange={(event) => setTourPromoSelection(event.target.checked && availableTourPromo ? {
-                id: availableTourPromo.id,
-                checkIn,
-                checkOut,
-              } : null)}
-              disabled={saving || tourPromosLoading || !availableTourPromo}
-            />
-            <span>Avail tour promo for {nights} night{nights === 1 ? '' : 's'}</span>
-          </label>
-          {tourPromosLoading && <p className="room-change-note" role="status">Loading tour promo prices…</p>}
-          {tourPromosError && <p className="payment-error" role="alert">{tourPromosError}</p>}
-          {!tourPromosLoading && !tourPromosError && !availableTourPromo && <p className="room-change-note">No active tour promo is available for this stay duration and check-in date.</p>}
-          {selectedTourPromo && <fieldset className="tour-promo-meal-options" disabled={saving}>
-            <legend>Tour package price</legend>
-            <label>
-              <input type="radio" name="tour-promo-meal" checked={tourPromoWithLunch} onChange={() => setTourPromoWithLunch(true)} />
-              <span>With lunch · {formatCurrency(selectedTourPromo.price_with_lunch)}</span>
+        <div className="booking-options-box">
+          <h3 className="booking-options-title">Optional Extras</h3>
+          {Number(guestCount) === 2 && <div className="tour-promo-booking-option">
+            <label className="airport-transfer-option">
+              <input
+                type="checkbox"
+                checked={selectedTourPromo !== null}
+                onChange={(event) => {
+                  setTourPromoSelection(event.target.checked && availableTourPromo ? {
+                    id: availableTourPromo.id,
+                    checkIn,
+                    checkOut,
+                  } : null)
+                  if (event.target.checked) setAirportTransferVehicleType(null)
+                }}
+                disabled={saving || tourPromosLoading || !availableTourPromo || tourPackageSelected}
+              />
+              <span>Avail tour promo for {nights} night{nights === 1 ? '' : 's'}</span>
             </label>
-            <label>
-              <input type="radio" name="tour-promo-meal" checked={!tourPromoWithLunch} onChange={() => setTourPromoWithLunch(false)} />
-              <span>Without lunch · {formatCurrency(selectedTourPromo.price_without_lunch)}</span>
+            {tourPromosLoading && <p className="room-change-note" role="status">Loading tour promo prices…</p>}
+            {tourPromosError && <p className="payment-error" role="alert">{tourPromosError}</p>}
+            {!tourPromosLoading && !tourPromosError && !availableTourPromo && <p className="room-change-note">No active tour promo is available for this stay duration and check-in date.</p>}
+            {tourPackageSelected && <p className="room-change-note">A tour promo and a manually priced tour package cannot be selected together.</p>}
+            {selectedTourPromo && <fieldset className="tour-promo-meal-options" disabled={saving}>
+              <legend>Tour promo price</legend>
+              <label className="tour-promo-choice">
+                <input type="radio" name="tour-promo-meal" checked={tourPromoWithLunch} onChange={() => setTourPromoWithLunch(true)} />
+                <span>With lunch · {formatCurrency(selectedTourPromo.price_with_lunch)}</span>
+              </label>
+              <label className="tour-promo-choice">
+                <input type="radio" name="tour-promo-meal" checked={!tourPromoWithLunch} onChange={() => setTourPromoWithLunch(false)} />
+                <span>Without lunch · {formatCurrency(selectedTourPromo.price_without_lunch)}</span>
+              </label>
+            </fieldset>}
+          </div>}
+          <div className="tour-package-booking-option">
+            <label className="airport-transfer-option">
+              <input
+                type="checkbox"
+                checked={tourPackageSelected}
+                onChange={(event) => setTourPackageSelected(event.target.checked)}
+                disabled={saving || !canSelectTourPackage || selectedTourPromo !== null || airportTransferVehicleType !== null}
+              />
+              <span>Tour Package</span>
             </label>
-          </fieldset>}
-        </section>}
-        <label className="airport-transfer-option">
-          <input type="checkbox" checked={airportTransferVehicleType !== null} onChange={(event) => setAirportTransferVehicleType(event.target.checked ? 'van' : null)} disabled={saving || transferRatesLoading || !transferRates} />
-          <span>Guest will avail of airport transfer</span>
-        </label>
-        {transferRatesLoading && <p className="room-change-note" role="status">Loading airport transfer prices…</p>}
-        {transferRatesError && <p className="payment-error" role="alert">{transferRatesError}</p>}
-        {airportTransferVehicleType && transferRates && <label>Airport transfer vehicle
-          <select value={airportTransferVehicleType} onChange={(event) => {
-            const vehicleType = event.target.value
-            if (vehicleType === 'van' || vehicleType === 'tricycle') setAirportTransferVehicleType(vehicleType)
-          }} disabled={saving}>
-            <option value="van">Van · {formatCurrency(transferRates.van)}</option>
-            <option value="tricycle">Tricycle · {formatCurrency(transferRates.tricycle)}</option>
-          </select>
-        </label>}
+            {!canSelectTourPackage && <p className="room-change-note">Tour packages are available for 1–11 guests.</p>}
+            {selectedTourPromo && <p className="room-change-note">A tour promo and a manually priced tour package cannot be selected together.</p>}
+            {airportTransferVehicleType && <p className="room-change-note">A tour package and airport transfer cannot be selected together.</p>}
+            {tourPackageSelected && <label className="tour-package-price-field">
+              <span>Tour package price <small>(total for this booking; added to room stay)</small></span>
+              <div className="tour-package-price-input">
+                <span aria-hidden="true">₱</span>
+                <input
+                  type="number"
+                  aria-label="Tour package price in Philippine pesos"
+                  min="0"
+                  step="0.01"
+                  value={tourPackagePriceInput}
+                  onChange={(event) => setTourPackagePriceInput(event.target.value)}
+                  required
+                  disabled={saving}
+                />
+              </div>
+            </label>}
+            {tourPackageSelected && !tourPackagePriceValid && <p className="payment-error" role="alert">Enter the total package price to continue.</p>}
+          </div>
+          <div className="tour-promo-transfer-option">
+            <label className="airport-transfer-option">
+              <input type="checkbox" checked={!selectedTourPromo && airportTransferVehicleType !== null} onChange={(event) => setAirportTransferVehicleType(event.target.checked ? 'van' : null)} disabled={saving || selectedTourPromo !== null || tourPackageSelected || transferRatesLoading || !transferRates} />
+              <span>Airport Transfer</span>
+            </label>
+            {selectedTourPromo && <p className="room-change-note">Airport transfer is included with the selected tour promo.</p>}
+            {tourPackageSelected && <p className="room-change-note">Airport transfer cannot be selected with a tour package.</p>}
+            {transferRatesLoading && <p className="room-change-note" role="status">Loading airport transfer prices…</p>}
+            {transferRatesError && <p className="payment-error" role="alert">{transferRatesError}</p>}
+            {airportTransferVehicleType && transferRates && !selectedTourPromo && <label>Airport transfer vehicle
+              <select value={airportTransferVehicleType} onChange={(event) => {
+                const vehicleType = event.target.value
+                if (vehicleType === 'van' || vehicleType === 'tricycle') setAirportTransferVehicleType(vehicleType)
+              }} disabled={saving}>
+                <option value="van">Van · {formatCurrency(transferRates.van)}</option>
+                <option value="tricycle">Tricycle · {formatCurrency(transferRates.tricycle)}</option>
+              </select>
+            </label>}
+          </div>
+        </div>
         <label><span className="assignment-label-title">Special requests <span>(optional)</span></span>
           <textarea rows={3} value={specialRequests} onChange={(event) => setSpecialRequests(event.target.value)} disabled={saving} />
         </label>
-        <div className="assignment-total"><span>{selectedTourPromo ? `Tour promo${airportTransferVehicleType ? ` + ${airportTransferVehicleType} airport transfer` : ''}` : airportTransferVehicleType ? `Room stay + ${airportTransferVehicleType} airport transfer` : 'Booking total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
+        <div className="assignment-total"><span>{selectedTourPromo ? 'Tour promo' : tourPackageSelected ? `Room stay + tour package${airportTransferVehicleType ? ` + ${airportTransferVehicleType} airport transfer` : ''}` : airportTransferVehicleType ? `Room stay + ${airportTransferVehicleType} airport transfer` : 'Booking total'}</span><strong>{formatCurrency(totalPrice)}</strong></div>
         {!selectedRoom && <p className="payment-error" role="status">No active room is available for the selected stay dates.</p>}
         {error && <p className="payment-error" role="alert">{error}</p>}
         <footer className="assignment-actions">
           <button className="button button-secondary" type="button" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="button button-primary" type="submit" disabled={saving || !selectedRoom || nights < 1 || Number(guestCount) > (selectedRoom?.capacity ?? 0)}>{saving ? 'Creating booking…' : 'Create booking'}</button>
+          <button className="button button-primary" type="submit" disabled={saving || !selectedRoom || nights < 1 || Number(guestCount) > (selectedRoom?.capacity ?? 0) || !tourPackagePriceValid}>{saving ? 'Creating booking…' : 'Create booking'}</button>
         </footer>
       </form>
     </section>
@@ -1123,7 +1188,7 @@ export function RoomChangeDialog({ guest, rooms, bookings, setupError, error, sa
   const nights = booking
     ? Math.max(0, Math.round((new Date(`${booking.checkOut}T00:00:00`).getTime() - new Date(`${booking.checkIn}T00:00:00`).getTime()) / 86_400_000))
     : 0
-  const newTotal = (booking?.tourPromoPrice ?? (selectedRoom?.rate ?? 0) * nights) + (booking?.airportTransferPrice ?? 0)
+  const newTotal = (booking?.tourPromoPrice ?? (selectedRoom?.rate ?? 0) * nights) + (booking?.tourPackagePrice ?? 0) + (booking?.airportTransferPrice ?? 0)
   const displayedTotal = booking ? selectedRoom ? newTotal : booking.amount : 0
   const displayedBalance = booking ? Math.max(0, displayedTotal - booking.paid) : 0
   const displayedOverpayment = booking ? Math.max(0, booking.paid - displayedTotal) : 0
@@ -1162,7 +1227,7 @@ export function RoomChangeDialog({ guest, rooms, bookings, setupError, error, sa
               {availableRooms.map((room) => <option key={room.id} value={room.id}>{room.name} · {formatCurrency(room.rate)}/night · up to {room.capacity}</option>)}
             </select>
           </label>
-          <div className="assignment-total"><span>{selectedRoom ? `${booking.tourPromoPrice != null ? `Tour promo (${booking.tourPromoWithLunch ? 'with lunch' : 'without lunch'})` : `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}`}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Current booking total'}</span><strong>{formatCurrency(displayedTotal)}</strong></div>
+          <div className="assignment-total"><span>{selectedRoom ? `${booking.tourPromoPrice != null ? `Tour promo (${booking.tourPromoWithLunch ? 'with lunch' : 'without lunch'})` : `${formatCurrency(selectedRoom.rate)} per room × ${nights} night${nights === 1 ? '' : 's'}${booking.tourPackagePrice != null ? ' + tour package' : ''}`}${booking.airportTransferPrice > 0 ? ` + ${formatCurrency(booking.airportTransferPrice)} airport transfer` : ''} · Updated total` : 'Current booking total'}</span><strong>{formatCurrency(displayedTotal)}</strong></div>
           <div className="room-change-payment">
             <div><span>Previously paid</span><strong>{formatCurrency(booking.paid)}</strong></div>
             <div><span>Remaining balance</span><strong>{formatCurrency(displayedBalance)}</strong></div>

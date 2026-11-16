@@ -15,6 +15,7 @@ type Booking = {
   check_out: string
   num_of_guests: number
   airport_transfer_price: number | string | null
+  tour_package_price: number | string | null
   tour_promo_price: number | string | null
   tour_promo_with_lunch: boolean | null
 }
@@ -104,7 +105,7 @@ Deno.serve(async (request) => {
   })
   const { data: bookingData, error: bookingError } = await supabase
     .from('bookings')
-    .select('id, guest_id, room_id, check_in, check_out, num_of_guests, airport_transfer_price, tour_promo_price, tour_promo_with_lunch')
+    .select('id, guest_id, room_id, check_in, check_out, num_of_guests, airport_transfer_price, tour_package_price, tour_promo_price, tour_promo_with_lunch')
     .in('id', bookingIds)
 
   if (bookingError) {
@@ -161,21 +162,25 @@ Deno.serve(async (request) => {
     ))
     const hasTourPromo = booking.tour_promo_price !== null && booking.tour_promo_price !== undefined
     const tourPromoPrice = hasTourPromo ? Number(booking.tour_promo_price) : 0
+    const hasTourPackage = booking.tour_package_price !== null && booking.tour_package_price !== undefined
+    const tourPackagePrice = hasTourPackage ? Number(booking.tour_package_price) : 0
     const airportTransferPrice = Number(booking.airport_transfer_price ?? 0)
-    if (hasTourPromo && (!Number.isFinite(tourPromoPrice) || tourPromoPrice < 0 || !Number.isFinite(airportTransferPrice) || airportTransferPrice < 0)) {
-      console.error('A booking has invalid tour promo pricing:', booking.id)
-      return jsonResponse({ error: 'One or more tour promo prices are invalid.' }, 422)
+    if ((hasTourPromo && (!Number.isFinite(tourPromoPrice) || tourPromoPrice < 0)) ||
+      (hasTourPackage && (!Number.isFinite(tourPackagePrice) || tourPackagePrice < 0)) ||
+      !Number.isFinite(airportTransferPrice) || airportTransferPrice < 0) {
+      console.error('A booking has invalid add-on pricing:', booking.id)
+      return jsonResponse({ error: 'One or more booking add-on prices are invalid.' }, 422)
+    }
+    if (hasTourPromo && hasTourPackage) {
+      console.error('A booking includes both a tour promo and a tour package:', booking.id)
+      return jsonResponse({ error: 'A booking cannot include both a tour promo and a tour package.' }, 422)
     }
     const roomStayAmount = hasTourPromo ? tourPromoPrice : bookingRoomRates.get(booking.room_id)! * totalNights
     const pricing = hasTourPromo
-      ? {
-        total: tourPromoPrice + airportTransferPrice,
-        additionalGuestCount: 0,
-        additionalGuestNightlyRate: 0,
-        additionalGuestCharge: 0,
-      }
+      ? { additionalGuestCount: 0, additionalGuestNightlyRate: 0, additionalGuestCharge: 0, total: tourPromoPrice }
       : calculateInvoicePricing(roomStayAmount, booking.num_of_guests, totalNights)
-    const { total, additionalGuestCount, additionalGuestNightlyRate, additionalGuestCharge } = pricing
+    const { additionalGuestCount, additionalGuestNightlyRate, additionalGuestCharge } = pricing
+    const total = pricing.total + (hasTourPromo ? 0 : tourPackagePrice + airportTransferPrice)
     const bookingPayments = payments.filter((payment) => payment.booking_id === booking.id)
     const returnedChanges = roomChanges.filter((change) => change.booking_id === booking.id)
     const paymentTotal = bookingPayments
@@ -191,7 +196,7 @@ Deno.serve(async (request) => {
     const roomName = room?.room_name?.trim() || `Room ${booking.room_id}`
     const roomLabel = room?.room_number ? `${roomName} (${room.room_number})` : roomName
     const averageNightlyRate = bookingRoomRates.get(booking.room_id)!
-    const promoDescription = `Tour package for 2 · ${booking.tour_promo_with_lunch ? 'with lunch' : 'without lunch'}`
+    const promoDescription = `Tour promo for 2 · ${booking.tour_promo_with_lunch ? 'with lunch' : 'without lunch'}`
     const rows = bookingPayments.map((payment) => {
       const status = payment.payment_status?.replaceAll('_', ' ') || 'pending'
       const details = [payment.payment_type?.replaceAll('_', ' '), payment.payment_method?.replaceAll('_', ' ')]
@@ -252,7 +257,8 @@ Deno.serve(async (request) => {
           ? `${promoDescription}: ${formatCurrency(tourPromoPrice)}`
           : `Room stay: ${totalNights} night${totalNights === 1 ? '' : 's'} × ${formatCurrency(averageNightlyRate)} average per night = ${formatCurrency(roomStayAmount)}`,
         ...(!hasTourPromo ? [`Additional guest charge: ${additionalGuestCount} additional guest${additionalGuestCount === 1 ? '' : 's'} × ${formatCurrency(additionalGuestNightlyRate)} per guest per night × ${totalNights} night${totalNights === 1 ? '' : 's'} = ${formatCurrency(additionalGuestCharge)}`] : []),
-        ...(hasTourPromo && airportTransferPrice > 0 ? [`Airport transfer: ${formatCurrency(airportTransferPrice)}`] : []),
+        ...(hasTourPackage ? [`Tour package: ${formatCurrency(tourPackagePrice)}`] : []),
+        ...(!hasTourPromo && airportTransferPrice > 0 ? [`Airport transfer: ${formatCurrency(airportTransferPrice)}`] : []),
         `Guests: ${booking.num_of_guests}`,
         `Total: ${formatCurrency(total)}`,
         `${outstandingLabel}: ${formatCurrency(outstanding)}`,
@@ -272,7 +278,8 @@ Deno.serve(async (request) => {
         <tr><td colspan="2" style="padding:0 8px 8px">
           <table role="presentation" style="width:100%;border-collapse:collapse;border-top:2px solid #51483f;border-bottom:2px solid #51483f">
             <tr><td style="padding:10px 7px;color:#8c857d;font-size:12px">${hasTourPromo ? escapeHtml(promoDescription) : `Room stay · ${totalNights} nights · avg. ${formatCurrency(averageNightlyRate)}/night`}</td><td style="padding:10px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(roomStayAmount)}</td></tr>
-            ${hasTourPromo && airportTransferPrice > 0 ? `<tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Airport transfer</td><td style="padding:8px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(airportTransferPrice)}</td></tr>` : ''}
+            ${hasTourPackage ? `<tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Tour package</td><td style="padding:8px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(tourPackagePrice)}</td></tr>` : ''}
+            ${!hasTourPromo && airportTransferPrice > 0 ? `<tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Airport transfer</td><td style="padding:8px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(airportTransferPrice)}</td></tr>` : ''}
             ${!hasTourPromo ? `<tr><td style="padding:8px 7px;color:#8c857d;font-size:12px">Additional guest charge · ${additionalGuestCount} guest${additionalGuestCount === 1 ? '' : 's'} × ${formatCurrency(additionalGuestNightlyRate)} per guest per night × ${totalNights} night${totalNights === 1 ? '' : 's'}</td><td style="padding:8px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(additionalGuestCharge)}</td></tr>` : ''}
             <tr><td style="padding:10px 7px;color:#8c857d;font-size:12px">Booking total</td><td style="padding:10px 7px;text-align:right;color:#51483f;font-size:12px">${formatCurrency(total)}</td></tr>
             <tr><td style="padding:10px 7px;color:#332d27;font-size:13px;font-weight:700">${outstandingLabel}</td><td style="padding:10px 7px;text-align:right;color:${balanceColor};font-size:15px;font-weight:700">${formatCurrency(outstanding)}</td></tr>
