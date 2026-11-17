@@ -10,6 +10,7 @@ import { RoomsPage } from './tabs/hometel/hometel-rooms'
 import { RatesPage } from './tabs/hometel/hometel-rates'
 import { GuestsPage } from './tabs/hometel/hometel-guests'
 import { PaymentsPage } from './tabs/hometel/hometel-payments'
+import { AnalyticsPage } from './tabs/hometel/hometel-analytics'
 import { ToursOverviewTab } from './tabs/tours/tours-overview'
 import { ToursBookingsTab } from './tabs/tours/tours-bookings'
 import { ToursPaymentsTab } from './tabs/tours/tours-payments'
@@ -1631,6 +1632,8 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
         <div className="page-content">
           {activeGroup === 'tours' ? (activeNav === 'Bookings' ? <ToursBookingsTab /> : activeNav === 'Payments' ? <ToursPaymentsTab /> : <ToursOverviewTab />) : activeNav === 'Overview' ? (
             <HometelOverview dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} revenueChartData={revenueChartData} bookingsInRange={bookingsInRange} revenueInRange={revenueInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
+          ) : activeNav === 'Analytics' ? (
+            <AnalyticsPage bookings={bookings} dataLoading={dataLoading} loadError={bookingsLoadError} />
           ) : activeNav === 'Bookings' ? (
             <BookingsPage bookings={bookings} loadError={bookingsLoadError} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} onEditBooking={(booking) => { setEditBookingError(''); setBookingToEdit(booking) }} onDeleteBooking={(booking) => { setBookingDeleteError(''); setBookingToDelete(booking) }} onSpecialRequestNoted={setBookingSpecialRequestNoted} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
           ) : activeNav === 'Rooms' ? (
