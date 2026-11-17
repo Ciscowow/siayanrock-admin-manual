@@ -102,3 +102,4 @@ Invoices use the booking's saved total and show the stay nights with its average
 
    The top-bar notification bell shows new bookings, booking-status changes, and payment transactions, and displays live toast alerts while the dashboard is open. Supabase Realtime must publish changes from `public.bookings` and `public.payments`. If those tables are not already enabled, run `supabase/migrations/20261002230000_enable_dashboard_notifications_realtime.sql` in the Supabase SQL Editor. Notifications are kept in the current browser session and are not a replacement for a persistent audit log.
 
+
