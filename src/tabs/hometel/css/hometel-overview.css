@@ -1,6 +1,6 @@
 .metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
 .metric-card { padding:18px 19px 17px; min-height:141px; }
-.metric-icon { width:34px; height:34px; border-radius:8px; display:grid; place-items:center; margin-bottom:14px; }
+.metric-icon { width:34px; height:34px; border-radius:6px; display:grid; place-items:center; margin-bottom:14px; }
 .metric-icon.mint { color:#438a6c; background:#e6f1eb; }
 .metric-icon.lavender { color:#7870a6; background:#efedfa; }
 .metric-icon.peach { color:#bd7754; background:#f9ece5; }
@@ -17,8 +17,8 @@
 .chart-legend strong { color:#4a433e; font-size:16px; margin-left:1px; }
 .chart-card-heading { gap:14px; }
 .chart-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:9px; }
-.chart-view-toggle { display:inline-flex; align-items:center; gap:2px; padding:3px; border:1px solid var(--line); border-radius:7px; background:#faf8f5; }
-.chart-view-toggle button { border:0; border-radius:5px; padding:6px 9px; background:transparent; color:#817970; font:inherit; font-size:12px; cursor:pointer; }
+.chart-view-toggle { display:inline-flex; align-items:center; gap:2px; padding:3px; border:1px solid var(--line); border-radius:5px; background:#faf8f5; }
+.chart-view-toggle button { border:0; border-radius:3px; padding:6px 9px; background:transparent; color:#817970; font:inherit; font-size:12px; cursor:pointer; }
 .chart-view-toggle button.active { background:#fff; color:#51483f; box-shadow:0 1px 3px #33291c1a; font-weight:600; }
 .chart-view-toggle button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .chart-legend .revenue-dot { background:#438a6c; }
@@ -27,7 +27,7 @@
 .more-button { border:0; background:none; color:#a19b94; padding:0; }
 .attention-item { width:100%; display:flex; text-align:left; align-items:center; gap:10px; padding:12px 0; border:0; border-bottom:1px solid #f1eee9; background:none; color:var(--ink); }
 .attention-item:hover .attention-copy strong { color:var(--accent); }
-.attention-icon { width:29px; height:29px; border-radius:7px; background:#f6eee7; color:#bf7956; display:grid; place-items:center; }
+.attention-icon { width:29px; height:29px; border-radius:5px; background:#f6eee7; color:#bf7956; display:grid; place-items:center; }
 .attention-copy { flex:1; }
 .attention-copy strong,.attention-copy span { display:block; }
 .attention-copy strong { font-size:13px; font-weight:600; }

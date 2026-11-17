@@ -13,7 +13,7 @@
 .tour-promo-duration small { color:#817970; }
 .tour-promo-cell { display:flex; align-items:center; gap:8px; }
 .tour-promo-currency { color:#817970; }
-.tour-promo-cell input, .transfer-price-row input { box-sizing:border-box; width:100%; min-width:0; height:42px; border:1px solid var(--line); border-radius:7px; background:#fff; padding:8px 11px; color:#332d27; font:inherit; font-size:14px; }
+.tour-promo-cell input, .transfer-price-row input { box-sizing:border-box; width:100%; min-width:0; height:42px; border:1px solid var(--line); border-radius:5px; background:#fff; padding:8px 11px; color:#332d27; font:inherit; font-size:14px; }
 .tour-promo-cell input:disabled, .transfer-price-row input:disabled { background:#faf8f5; color:#817970; }
 .transfer-price-rows { display:grid; gap:10px; }
 .transfer-price-row { display:grid; grid-template-columns:24px minmax(0,1fr) 15px minmax(100px,124px); align-items:center; gap:10px; color:#51483f; font-size:14px; }

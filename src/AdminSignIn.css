@@ -56,7 +56,7 @@
 
 
 
-.admin-sign-in-card > img {
+.admin-sign-in-brand > img {
   display:block;
   width:68px;
   height:68px;
@@ -113,6 +113,7 @@
   border-radius:9px;
   background:#fcfbf9;
   color:var(--ink);
+  font-size:14px;
   outline:none;
   transition:border-color .18s, box-shadow .18s, background .18s;
 }
@@ -195,6 +196,14 @@
   color:#fff;
 }
 
+.admin-sign-in-account .account-indicator-menu {
+  border-radius:9px;
+}
+
+.admin-sign-in-account .account-indicator-action {
+  border-radius:6px;
+}
+
 .auth-loading {
   display:grid;
   min-height:100vh;
@@ -211,6 +220,22 @@
 @media (max-width:720px) {
   .admin-sign-in-page {
     padding:76px 18px 28px;
+  }
+
+  .admin-sign-in-brand {
+    display:flex;
+    align-items:center;
+    gap:16px;
+    margin-bottom:25px;
+  }
+
+  .admin-sign-in-brand > img {
+    flex:none;
+    margin-bottom:0;
+  }
+
+  .admin-sign-in-brand .eyebrow {
+    margin:0;
   }
 
   .admin-sign-in-card {
