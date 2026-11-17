@@ -1,4 +1,4 @@
-import { BedDouble, CalendarDays, CircleDollarSign, Home, Plane, Tags, Users } from 'lucide-react'
+import { BedDouble, CalendarDays, CircleDollarSign, Home, Plane, Tags, TrendingUp, Users } from 'lucide-react'
 import type { Booking, Room, SupabaseRoom } from './types'
 
 export const hasSpecialRequest = (booking: Booking) => {
@@ -23,6 +23,7 @@ export const mapSupabaseRoom = (record: SupabaseRoom): Room => ({
 
 export const hometelItems = [
   { label: 'Overview', icon: Home, count: undefined },
+  { label: 'Analytics', icon: TrendingUp, count: undefined },
   { label: 'Bookings', icon: CalendarDays, count: undefined },
   { label: 'Rooms', icon: BedDouble, count: undefined },
   { label: 'Rates', icon: Tags, count: undefined },
