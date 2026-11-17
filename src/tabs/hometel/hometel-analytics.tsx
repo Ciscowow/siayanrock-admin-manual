@@ -213,6 +213,6 @@ export function AnalyticsPage({ bookings, dataLoading, loadError }: { bookings: 
         </div>
       </section>
     </div>
-    <p className="analytics-footnote">Shows booked value, not payments collected, grouped by check-in date. Includes confirmed, checked-in, and completed bookings; pending and cancelled bookings are excluded. Room revenue excludes tour promos, tour packages, and airport transfers.</p>
+    <p className="analytics-footnote"><CalendarDays size={14} /> Room revenue is calculated by subtracting recorded tour promo, package, and transfer prices from each booking total.</p>
   </section>
 }
