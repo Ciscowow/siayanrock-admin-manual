@@ -29,8 +29,10 @@ export default function AdminSignIn({ onSignIn }: { onSignIn: (email: string, pa
     <main className="admin-sign-in-page">
       <div className="admin-sign-in-account"><AccountIndicator onLogin={() => emailInputRef.current?.focus()} /></div>
       <section className="admin-sign-in-card">
-        <img src="/siayanrock-logo.jpg" alt="SiayanRock" />
-        <p className="eyebrow">SiayanRock Admin</p>
+        <div className="admin-sign-in-brand">
+          <img src="/siayanrock-logo.jpg" alt="SiayanRock" />
+          <p className="eyebrow">SiayanRock Admin</p>
+        </div>
         <h1>Welcome back!</h1>
         <p className="admin-sign-in-description">Sign in with your administrator account to continue.</p>
         <form onSubmit={(event) => void handleSubmit(event)}>

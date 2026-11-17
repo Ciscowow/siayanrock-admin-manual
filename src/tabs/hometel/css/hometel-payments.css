@@ -1,11 +1,11 @@
 .detail-grid span,.payment-summary span { color:#a49c94; font-size:12px; margin-bottom:4px; }
 .payment-summary > div:not(.progress-bar) { display:flex; justify-content:space-between; align-items:center; margin:10px 0; }
 .payment-summary strong { font-size:13px; }
-.payment-entry { margin-top:18px; padding:14px; border:1px solid var(--line); border-radius:8px; background:#fcfbf9; display:grid; grid-template-columns:1fr 1fr; gap:11px; }
+.payment-entry { margin-top:18px; padding:14px; border:1px solid var(--line); border-radius:6px; background:#fcfbf9; display:grid; grid-template-columns:1fr 1fr; gap:11px; }
 .payment-entry h4,.payment-history h4 { grid-column:1/-1; margin:0; font-size:13px; }
 .payment-entry label { display:grid; grid-template-columns:minmax(0,1fr); gap:6px; color:#817970; font-size:12px; }
-.payment-entry input,.payment-entry select { width:100%; min-width:0; border:1px solid #e6e0d9; border-radius:6px; background:#fff; padding:8px; color:#51483f; font:inherit; font-size:13px; }
-.payment-entry .payment-input { display:flex; align-items:center; border:1px solid #e6e0d9; border-radius:6px; background:#fff; padding-left:9px; color:#90877e; }
+.payment-entry input,.payment-entry select { width:100%; min-width:0; border:1px solid #e6e0d9; border-radius:4px; background:#fff; padding:8px; color:#51483f; font:inherit; font-size:13px; }
+.payment-entry .payment-input { display:flex; align-items:center; border:1px solid #e6e0d9; border-radius:4px; background:#fff; padding-left:9px; color:#90877e; }
 .payment-entry .payment-input input { box-sizing:border-box; flex:1; width:100%; border:0; outline:0; }
 .payment-preview,.payment-error,.payment-entry .button { grid-column:1/-1; margin:0; }
 .payment-preview { color:#6d665e; font-size:12px; }
@@ -26,7 +26,7 @@
 .payment-transactions-dialog { width:min(650px,100%); max-height:calc(100vh - 40px); display:flex; flex-direction:column; padding:22px; }
 .payment-transactions-dialog .assignment-header { flex-shrink:0; margin-bottom:12px; }
 .payment-transactions-list { overflow:auto; display:grid; }
-.payment-booking-group { display:grid; gap:0; margin-bottom:14px; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#fff; }
+.payment-booking-group { display:grid; gap:0; margin-bottom:14px; overflow:hidden; border:1px solid var(--line); border-radius:6px; background:#fff; }
 .payment-booking-group-header { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px 12px; padding:12px; background:#faf7f3; }
 .payment-booking-group-header > div:first-child { display:grid; gap:4px; min-width:0; }
 .payment-booking-group-header > div:first-child strong { color:#51483f; font-size:13px; }
