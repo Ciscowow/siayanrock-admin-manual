@@ -1524,6 +1524,16 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
     setMobileMenu(false)
   }
 
+  const toggleSidebar = () => {
+    if (window.matchMedia('(max-width: 720px)').matches) {
+      setMobileMenu(false)
+      setSidebarOpen(true)
+      return
+    }
+
+    setSidebarOpen((isOpen) => !isOpen)
+  }
+
   const openNotification = (notification: DashboardNotification | Omit<DashboardNotification, 'read'>) => {
     setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, read: true } : item))
     setNotificationsOpen(false)
@@ -1549,9 +1559,9 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           <button
             className="brand-logo-button"
             type="button"
-            onClick={() => setSidebarOpen((isOpen) => !isOpen)}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            onClick={toggleSidebar}
+            aria-label={mobileMenu ? 'Close menu' : sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={mobileMenu ? 'Close menu' : sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             <img className="brand-mark" src="/siayanrock-logo.jpg" alt="" />
           </button>
@@ -1575,10 +1585,11 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
           {sidebarOpen && <span>{sidebarDate}</span>}
         </div>
       </aside>
+      {mobileMenu && <button className="sidebar-backdrop" type="button" aria-label="Close navigation" onClick={() => setMobileMenu(false)} />}
 
       <main className="main-content">
         <header className="topbar">
-          <button className="mobile-menu-button icon-button" onClick={() => setMobileMenu(!mobileMenu)} aria-label="Open menu"><Menu size={21} /></button>
+          <button className="mobile-menu-button icon-button" onClick={() => setMobileMenu((isOpen) => !isOpen)} aria-label={mobileMenu ? 'Close menu' : 'Open menu'} aria-expanded={mobileMenu}><Menu size={21} /></button>
           <div className="breadcrumb"><span>{activeGroup === 'hometel' ? 'Hometel' : 'Tours'}</span><span className="slash">/</span><strong>{activeNav}</strong></div>
           <div className="topbar-actions">
             <div className="notification-container">
@@ -1632,10 +1643,10 @@ function DashboardApp({ userEmail, onSignOut }: { userEmail: string; onSignOut: 
         <div className="page-content">
           {activeGroup === 'tours' ? (activeNav === 'Bookings' ? <ToursBookingsTab /> : activeNav === 'Payments' ? <ToursPaymentsTab /> : <ToursOverviewTab />) : activeNav === 'Overview' ? (
             <HometelOverview dataLoading={dataLoading} invoiceSentGuests={invoiceSentGuests} monthRevenue={monthRevenue} todayCheckIns={todayCheckIns} todayCheckOuts={todayCheckOuts} openMetricPopup={openMetricPopup} range={range} setRange={setRange} chartData={chartData} revenueChartData={revenueChartData} bookingsInRange={bookingsInRange} revenueInRange={revenueInRange} pendingBookings={pendingBookings} paymentAttentionBookings={paymentAttentionBookings} creditItemsDueCount={creditItemsDueCount} specialRequestBookings={specialRequestBookings} setStatusFilter={setStatusFilter} nav={nav} setPaymentStatusFilter={setPaymentStatusFilter} setQuery={setQuery} setSpecialRequestsOnly={setSpecialRequestsOnly} bookings={bookings} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} />
-          ) : activeNav === 'Analytics' ? (
-            <AnalyticsPage bookings={bookings} dataLoading={dataLoading} loadError={bookingsLoadError} />
           ) : activeNav === 'Bookings' ? (
             <BookingsPage bookings={bookings} loadError={bookingsLoadError} query={query} setQuery={setQuery} statusFilter={statusFilter} setStatusFilter={setStatusFilter} specialRequestsOnly={specialRequestsOnly} setSpecialRequestsOnly={setSpecialRequestsOnly} onStatusChange={saveBookingStatus} onManagePayment={(booking) => { setSelectedBooking(booking); setBookingPaymentOpen(true); setPaymentError('') }} onEditBooking={(booking) => { setEditBookingError(''); setBookingToEdit(booking) }} onDeleteBooking={(booking) => { setBookingDeleteError(''); setBookingToDelete(booking) }} onSpecialRequestNoted={setBookingSpecialRequestNoted} onCreateBooking={() => { setNewBookingError(''); setNewBookingOpen(true) }} />
+          ) : activeNav === 'Analytics' ? (
+            <AnalyticsPage bookings={bookings} dataLoading={dataLoading} loadError={bookingsLoadError} />
           ) : activeNav === 'Rooms' ? (
             <RoomsPage rooms={rooms} bookings={bookings} occupiedRoomIds={occupiedRoomIds} dataLoading={dataLoading} query={query} setQuery={setQuery} onUpdateRoom={updateRoomDetails} onSetMaintenance={setRoomMaintenance} updatingRoomId={updatingRoomId} error={roomStatusError} />
           ) : activeNav === 'Rates' ? (
