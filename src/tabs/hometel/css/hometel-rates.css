@@ -5,13 +5,14 @@
 .tour-promos-card form, .transfer-prices-card form { display:grid; gap:18px; }
 .tour-promo-table { display:grid; gap:8px; }
 .tour-promo-header-row, .tour-promo-row { display:grid; grid-template-columns: minmax(110px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr); gap:12px; align-items:stretch; }
-.tour-promo-header-row { padding:0 0 8px; color:#51483f; font-size:12px; font-weight:600; border-bottom:1px solid var(--line); }
+.tour-promo-header-row { padding:0 0 8px; color:#51483f; font-size:14px; font-weight:600; border-bottom:1px solid var(--line); }
 .tour-promo-row { padding:10px 0; border-bottom:1px solid var(--line); }
 .tour-promo-row:last-child { border-bottom:none; }
 .tour-promo-duration { display:flex; flex-direction:column; justify-content:center; color:#332d27; }
 .tour-promo-duration span { font-weight:600; }
 .tour-promo-duration small { color:#817970; }
 .tour-promo-cell { display:flex; align-items:center; gap:8px; }
+.tour-promo-meal-label { display:none; }
 .tour-promo-currency { color:#817970; }
 .tour-promo-cell input, .transfer-price-row input { box-sizing:border-box; width:100%; min-width:0; height:42px; border:1px solid var(--line); border-radius:5px; background:#fff; padding:8px 11px; color:#332d27; font:inherit; font-size:14px; }
 .tour-promo-cell input:disabled, .transfer-price-row input:disabled { background:#faf8f5; color:#817970; }
@@ -20,6 +21,27 @@
 .transfer-price-row svg { color:#80644f; }
 .transfer-price-currency { color:#817970; text-align:center; }
 .transfer-prices-error { margin:0; color:var(--red); font-size:12px; line-height:1.45; }
-.tour-promos-card footer, .transfer-prices-card footer { display:flex; align-items:center; justify-content:space-between; gap:14px; padding-top:14px; border-top:1px solid var(--line); color:#817970; font-size:12px; }
+.tour-promos-card footer, .transfer-prices-card footer { display:flex; align-items:center; justify-content:space-between; gap:14px; padding-top:14px; border-top:1px solid var(--line); color:#817970; font-size:14px; }
 .tour-promos-card footer .button, .transfer-prices-card footer .button { min-height:42px; }
+@media (min-width:721px) {
+  .tour-promos-card, .transfer-prices-card { box-sizing:border-box; width:min(680px,100%); padding:20px; }
+  .tour-promos-card header, .transfer-prices-card header { margin-bottom:14px; }
+  .tour-promos-card .eyebrow, .transfer-prices-card .eyebrow { font-size:9px; }
+  .tour-promos-card h2, .transfer-prices-card h2 { font-size:16px; }
+  .tour-promos-card form, .transfer-prices-card form { gap:14px; }
+  .tour-promo-table { gap:6px; }
+  .tour-promo-header-row, .tour-promo-row { grid-template-columns:minmax(100px,1fr) minmax(160px,1fr) minmax(160px,1fr); gap:10px; }
+  .tour-promo-header-row { font-size:12px; }
+  .tour-promo-row { padding:8px 0; }
+  .tour-promo-duration { font-size:14px; }
+  .tour-promo-duration small { font-size:12px; }
+  .tour-promo-currency, .transfer-price-currency { font-size:14px; }
+  .tour-promo-cell input, .transfer-price-row input { height:36px; padding:6px 9px; font-size:12px; }
+  .transfer-price-rows { gap:8px; }
+  .transfer-price-row { grid-template-columns:22px minmax(0,1fr) 13px minmax(90px,110px); gap:8px; font-size:12px; }
+  .transfer-prices-error { font-size:12px; }
+  .tour-promos-card footer, .transfer-prices-card footer { gap:10px; font-size:12px; }
+  .tour-promos-card footer .button, .transfer-prices-card footer .button { min-height:36px; padding:8px 12px; font-size:12px; }
+}
 @media (max-width:480px) { .tour-promos-card, .transfer-prices-card { padding:18px; } .tour-promo-header-row, .tour-promo-row { grid-template-columns:1fr; gap:8px; } .tour-promo-header-row { display:none; } .tour-promo-duration { flex-direction:row; align-items:center; justify-content:space-between; } .transfer-price-row { grid-template-columns:22px minmax(0,1fr) 14px minmax(88px,110px); gap:8px; }.tour-promos-card footer, .transfer-prices-card footer { align-items:flex-start; flex-direction:column; }.tour-promos-card footer .button, .transfer-prices-card footer .button { align-self:flex-end; } }
+@media (max-width:480px) { .tour-promo-cell { gap:6px; }.tour-promo-meal-label { display:inline; flex:none; color:#51483f; font-size:12px; white-space:nowrap; }.tour-promo-cell input { width:0; flex:1; } }

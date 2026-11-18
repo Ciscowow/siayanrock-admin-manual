@@ -167,8 +167,8 @@ export function RatesPage() {
 
     <section className="card tour-promos-card" aria-labelledby="tour-promos-title">
       <header>
-        <p className="eyebrow">Tour promos</p>
-        <h2 id="tour-promos-title">2 pax package rates</h2>
+        <p className="eyebrow">Tour Promos</p>
+        <h2 id="tour-promos-title">2 Pax Promo Rates</h2>
       </header>
       <form onSubmit={saveTourPromos}>
         <div className="tour-promo-table">
@@ -186,11 +186,13 @@ export function RatesPage() {
               </div>
 
               <label className="tour-promo-cell">
+                <span className="tour-promo-meal-label">With lunch</span>
                 <span className="tour-promo-currency" aria-hidden="true">₱</span>
                 <input aria-label={`${promo.nights} nights with lunch price`} type="number" min="0" step="0.01" value={promo.price_with_lunch} disabled={tourPromosLoading || !savedTourPromos || tourPromosSaving} onChange={(event) => updateTourPromoRow(promo.nights, 'price_with_lunch', event.target.value)} />
               </label>
 
               <label className="tour-promo-cell">
+                <span className="tour-promo-meal-label">Without lunch</span>
                 <span className="tour-promo-currency" aria-hidden="true">₱</span>
                 <input aria-label={`${promo.nights} nights without lunch price`} type="number" min="0" step="0.01" value={promo.price_without_lunch} disabled={tourPromosLoading || !savedTourPromos || tourPromosSaving} onChange={(event) => updateTourPromoRow(promo.nights, 'price_without_lunch', event.target.value)} />
               </label>
@@ -209,8 +211,8 @@ export function RatesPage() {
 
     <section className="card transfer-prices-card" aria-labelledby="transfer-prices-title">
       <header>
-        <p className="eyebrow">Settings</p>
-        <h2 id="transfer-prices-title">Airport transfer prices</h2>
+        <p className="eyebrow">Transport Rates</p>
+        <h2 id="transfer-prices-title">Airport Transfer Prices</h2>
       </header>
       <form onSubmit={saveTransferPrices}>
         <div className="transfer-price-rows">
